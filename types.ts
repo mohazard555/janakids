@@ -12,3 +12,10 @@ export interface Playlist {
   name: string;
   videoIds: number[];
 }
+
+export interface Activity {
+  id: number;
+  title: string;
+  description: string;
+  imageUrl: string;
+}

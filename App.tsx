@@ -10,13 +10,16 @@ import AdminSettings from './components/AdminSettings';
 import AddShortsForm from './components/AddShortsForm';
 import ShortsCarousel from './components/ShortsCarousel';
 import EditVideoModal from './components/EditVideoModal';
-import type { Video, Playlist } from './types';
+import AddActivityForm from './components/AddActivityForm';
+import ActivityCard from './components/ActivityCard';
+import type { Video, Playlist, Activity } from './types';
 import { 
     INITIAL_VIDEOS, 
     INITIAL_SHORTS, 
     INITIAL_PLAYLISTS, 
     INITIAL_CREDENTIALS,
-    INITIAL_CHANNEL_DESCRIPTION 
+    INITIAL_CHANNEL_DESCRIPTION,
+    INITIAL_ACTIVITIES
 } from './data';
 
 const getYoutubeVideoId = (url: string): string | null => {
@@ -54,6 +57,7 @@ const persistedState = loadStateFromLocalStorage();
 const App: React.FC = () => {
   const [videos, setVideos] = useState<Video[]>(persistedState?.videos ?? INITIAL_VIDEOS);
   const [shorts, setShorts] = useState<Video[]>(persistedState?.shorts ?? INITIAL_SHORTS);
+  const [activities, setActivities] = useState<Activity[]>(persistedState?.activities ?? INITIAL_ACTIVITIES);
   const [channelLogo, setChannelLogo] = useState<string | null>(persistedState?.channelLogo ?? null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -67,22 +71,25 @@ const App: React.FC = () => {
     const appState = {
         videos,
         shorts,
+        activities,
         channelLogo,
         playlists,
         channelDescription,
         credentials,
     };
     saveStateToLocalStorage(appState);
-  }, [videos, shorts, channelLogo, playlists, channelDescription, credentials]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, credentials]);
 
   const handleExportData = () => {
-    const fileContent = `import type { Video, Playlist } from './types';
+    const fileContent = `import type { Video, Playlist, Activity } from './types';
 
 export const INITIAL_CHANNEL_DESCRIPTION: string = ${JSON.stringify(channelDescription, null, 2)};
 
 export const INITIAL_VIDEOS: Video[] = ${JSON.stringify(videos, null, 2)};
 
 export const INITIAL_SHORTS: Video[] = ${JSON.stringify(shorts, null, 2)};
+
+export const INITIAL_ACTIVITIES: Activity[] = ${JSON.stringify(activities, null, 2)};
 
 export const INITIAL_PLAYLISTS: Playlist[] = ${JSON.stringify(playlists, null, 2)};
 
@@ -143,6 +150,24 @@ export const INITIAL_CREDENTIALS = { username: ${JSON.stringify(credentials.user
       views: 0,
     };
     setShorts(prev => [newShort, ...prev]);
+  };
+
+  const handleAddActivity = (newActivityData: { title: string; description: string; imageFile: File }) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+          const newActivity: Activity = {
+              id: Date.now(),
+              title: newActivityData.title,
+              description: newActivityData.description,
+              imageUrl: reader.result as string,
+          };
+          setActivities(prev => [newActivity, ...prev]);
+      };
+      reader.readAsDataURL(newActivityData.imageFile);
+  };
+
+  const handleDeleteActivity = (activityId: number) => {
+    setActivities(prev => prev.filter(a => a.id !== activityId));
   };
   
   const handleIncrementViewCount = (videoId: number) => {
@@ -257,10 +282,13 @@ export const INITIAL_CREDENTIALS = { username: ${JSON.stringify(credentials.user
         {isLoggedIn && (
             <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl shadow-lg mb-12 border border-sky-200">
                 <h2 className="text-4xl font-black text-center text-sky-700 mb-8">لوحة تحكم الأدمن</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
                     <AddVideoForm onAddVideo={handleAddVideo} />
-                    <CreatePlaylistForm onCreatePlaylist={handleCreatePlaylist} />
                     <AddShortsForm onAddShort={handleAddShort} />
+                    <AddActivityForm onAddActivity={handleAddActivity} />
+                </div>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <CreatePlaylistForm onCreatePlaylist={handleCreatePlaylist} />
                     <AdminSettings 
                         onCredentialsChange={setCredentials} 
                         currentCredentials={credentials}
@@ -271,6 +299,31 @@ export const INITIAL_CREDENTIALS = { username: ${JSON.stringify(credentials.user
         )}
         
         {(shorts.length > 0 || isLoggedIn) && <ShortsCarousel shorts={shorts} onWatchNowClick={handleIncrementViewCount} />}
+
+        {(activities.length > 0 || isLoggedIn) && (
+            <div className="my-12">
+                <h2 className="text-3xl font-bold text-gray-800 mb-6 border-r-8 border-green-500 pr-4">
+                    🎨 أنشطة تعليمية ومرحة
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                    {activities.map(activity => (
+                        <ActivityCard 
+                            key={activity.id}
+                            activity={activity}
+                            isAdmin={isLoggedIn}
+                            onDeleteActivity={handleDeleteActivity}
+                        />
+                    ))}
+                    {activities.length === 0 && isLoggedIn && (
+                        <div className="col-span-full text-center py-16 bg-gray-100 rounded-2xl">
+                            <p className="text-lg text-gray-500">
+                                لم تتم إضافة أي أنشطة بعد. ابدأ بإضافة نشاط جديد!
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
 
         <PlaylistTabs playlists={playlists} selectedId={selectedPlaylistId} onSelect={setSelectedPlaylistId} />
 

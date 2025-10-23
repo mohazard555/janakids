@@ -1,10 +1,12 @@
-import type { Video, Playlist } from './types';
+import type { Video, Playlist, Activity } from './types';
 
 export const INITIAL_CHANNEL_DESCRIPTION: string = 'استمتع بأجمل القصص التعليمية والمسلية من قناة Jana Kids';
 
 export const INITIAL_VIDEOS: Video[] = [];
 
 export const INITIAL_SHORTS: Video[] = [];
+
+export const INITIAL_ACTIVITIES: Activity[] = [];
 
 export const INITIAL_PLAYLISTS: Playlist[] = [];
 
