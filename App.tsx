@@ -19,7 +19,8 @@ import {
     INITIAL_PLAYLISTS, 
     INITIAL_CREDENTIALS,
     INITIAL_CHANNEL_DESCRIPTION,
-    INITIAL_ACTIVITIES
+    INITIAL_ACTIVITIES,
+    INITIAL_CHANNEL_LOGO
 } from './data';
 
 const getYoutubeVideoId = (url: string): string | null => {
@@ -58,7 +59,7 @@ const App: React.FC = () => {
   const [videos, setVideos] = useState<Video[]>(persistedState?.videos ?? INITIAL_VIDEOS);
   const [shorts, setShorts] = useState<Video[]>(persistedState?.shorts ?? INITIAL_SHORTS);
   const [activities, setActivities] = useState<Activity[]>(persistedState?.activities ?? INITIAL_ACTIVITIES);
-  const [channelLogo, setChannelLogo] = useState<string | null>(persistedState?.channelLogo ?? null);
+  const [channelLogo, setChannelLogo] = useState<string | null>(persistedState?.channelLogo ?? INITIAL_CHANNEL_LOGO);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [credentials, setCredentials] = useState(persistedState?.credentials ?? INITIAL_CREDENTIALS);
@@ -82,6 +83,8 @@ const App: React.FC = () => {
 
   const handleExportData = () => {
     const fileContent = `import type { Video, Playlist, Activity } from './types';
+
+export const INITIAL_CHANNEL_LOGO: string | null = ${JSON.stringify(channelLogo, null, 2)};
 
 export const INITIAL_CHANNEL_DESCRIPTION: string = ${JSON.stringify(channelDescription, null, 2)};
 
