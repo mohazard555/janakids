@@ -12,6 +12,7 @@ import ShortsCarousel from './components/ShortsCarousel';
 import EditVideoModal from './components/EditVideoModal';
 import AddActivityForm from './components/AddActivityForm';
 import ActivityCard from './components/ActivityCard';
+import Toast, { ToastMessage } from './components/Toast';
 import type { Video, Playlist, Activity } from './types';
 
 interface GistSyncSettings {
@@ -47,6 +48,7 @@ const App: React.FC = () => {
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
@@ -71,8 +73,9 @@ const App: React.FC = () => {
         setSyncSettings(settings);
         if (settings.gistUrl) {
           try {
-            console.log("Fetching data from Gist:", settings.gistUrl);
-            const response = await fetch(settings.gistUrl);
+            const fetchUrl = `${settings.gistUrl}?cache_bust=${new Date().getTime()}`;
+            console.log("Fetching data from Gist:", fetchUrl);
+            const response = await fetch(fetchUrl);
             if (!response.ok) {
               throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -86,7 +89,7 @@ const App: React.FC = () => {
             console.log("Data loaded successfully from Gist.");
           } catch (error) {
             console.error("Failed to fetch initial data from Gist", error);
-            alert("فشل تحميل البيانات من Gist. الرجاء التحقق من الرابط أو إعدادات الشبكة.");
+            setToastMessage({ text: 'فشل تحميل البيانات من Gist. قد ترى محتوى قديماً.', type: 'error' });
           }
         }
       } else {
@@ -114,6 +117,7 @@ const App: React.FC = () => {
 
       if (!gistId || !filename) {
         console.error("Invalid Gist URL format. Cannot extract Gist ID or filename.");
+        setToastMessage({ text: 'رابط Gist غير صالح. لا يمكن المزامنة.', type: 'error' });
         return;
       }
       
@@ -149,9 +153,10 @@ const App: React.FC = () => {
           throw new Error(`GitHub API Error: ${errorData.message}`);
         }
         console.log("Data synced to Gist successfully.");
+        setToastMessage({ text: 'تمت المزامنة بنجاح!', type: 'success' });
       } catch (error) {
         console.error("Failed to sync data to Gist:", error);
-        alert(`حدث خطأ أثناء المزامنة مع Gist: ${error.message}`);
+        setToastMessage({ text: `فشل المزامنة: ${error.message}`, type: 'error' });
       }
 
     }, 2000); // 2-second debounce
@@ -375,6 +380,7 @@ const App: React.FC = () => {
         </div>
       </main>
       <Footer />
+      <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
     </div>
   );
 };
