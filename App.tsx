@@ -13,15 +13,6 @@ import EditVideoModal from './components/EditVideoModal';
 import AddActivityForm from './components/AddActivityForm';
 import ActivityCard from './components/ActivityCard';
 import type { Video, Playlist, Activity } from './types';
-import { 
-    INITIAL_VIDEOS, 
-    INITIAL_SHORTS, 
-    INITIAL_PLAYLISTS, 
-    INITIAL_CREDENTIALS,
-    INITIAL_CHANNEL_DESCRIPTION,
-    INITIAL_ACTIVITIES,
-    INITIAL_CHANNEL_LOGO
-} from './data';
 
 const getYoutubeVideoId = (url: string): string | null => {
   if (!url) return null;
@@ -53,22 +44,61 @@ const saveStateToLocalStorage = (state: any) => {
     }
 };
 
-const persistedState = loadStateFromLocalStorage();
-
 const App: React.FC = () => {
-  const [videos, setVideos] = useState<Video[]>(persistedState?.videos ?? INITIAL_VIDEOS);
-  const [shorts, setShorts] = useState<Video[]>(persistedState?.shorts ?? INITIAL_SHORTS);
-  const [activities, setActivities] = useState<Activity[]>(persistedState?.activities ?? INITIAL_ACTIVITIES);
-  const [channelLogo, setChannelLogo] = useState<string | null>(persistedState?.channelLogo ?? INITIAL_CHANNEL_LOGO);
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [shorts, setShorts] = useState<Video[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [channelLogo, setChannelLogo] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [credentials, setCredentials] = useState(persistedState?.credentials ?? INITIAL_CREDENTIALS);
-  const [playlists, setPlaylists] = useState<Playlist[]>(persistedState?.playlists ?? INITIAL_PLAYLISTS);
+  const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
-  const [channelDescription, setChannelDescription] = useState(persistedState?.channelDescription ?? INITIAL_CHANNEL_DESCRIPTION);
+  const [channelDescription, setChannelDescription] = useState('');
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const loadInitialData = async () => {
+      const persistedState = loadStateFromLocalStorage();
+      if (persistedState) {
+        setVideos(persistedState.videos ?? []);
+        setShorts(persistedState.shorts ?? []);
+        setActivities(persistedState.activities ?? []);
+        setChannelLogo(persistedState.channelLogo ?? null);
+        setPlaylists(persistedState.playlists ?? []);
+        setChannelDescription(persistedState.channelDescription ?? '');
+        setCredentials(persistedState.credentials ?? { username: "admin", password: "password" });
+        setIsLoading(false);
+      } else {
+        try {
+          const response = await fetch('/data.json');
+          if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+          setVideos(data.INITIAL_VIDEOS ?? []);
+          setShorts(data.INITIAL_SHORTS ?? []);
+          setActivities(data.INITIAL_ACTIVITIES ?? []);
+          setChannelLogo(data.INITIAL_CHANNEL_LOGO ?? null);
+          setPlaylists(data.INITIAL_PLAYLISTS ?? []);
+          setChannelDescription(data.INITIAL_CHANNEL_DESCRIPTION ?? '');
+          setCredentials(data.INITIAL_CREDENTIALS ?? { username: "admin", password: "password" });
+        } catch (error) {
+          console.error("Failed to fetch initial data from data.json", error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  useEffect(() => {
+    // Don't save initial empty state on first render
+    if (isLoading) return; 
+    
     const appState = {
         videos,
         shorts,
@@ -79,36 +109,29 @@ const App: React.FC = () => {
         credentials,
     };
     saveStateToLocalStorage(appState);
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, credentials]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, credentials, isLoading]);
 
   const handleExportData = () => {
-    const fileContent = `import type { Video, Playlist, Activity } from './types';
-
-export const INITIAL_CHANNEL_LOGO: string | null = ${JSON.stringify(channelLogo, null, 2)};
-
-export const INITIAL_CHANNEL_DESCRIPTION: string = ${JSON.stringify(channelDescription, null, 2)};
-
-export const INITIAL_VIDEOS: Video[] = ${JSON.stringify(videos, null, 2)};
-
-export const INITIAL_SHORTS: Video[] = ${JSON.stringify(shorts, null, 2)};
-
-export const INITIAL_ACTIVITIES: Activity[] = ${JSON.stringify(activities, null, 2)};
-
-export const INITIAL_PLAYLISTS: Playlist[] = ${JSON.stringify(playlists, null, 2)};
-
-export const INITIAL_CREDENTIALS = { username: ${JSON.stringify(credentials.username)}, password: ${JSON.stringify(credentials.password)} };
-`;
-
-    const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+    const dataToExport = {
+        INITIAL_CHANNEL_LOGO: channelLogo,
+        INITIAL_CHANNEL_DESCRIPTION: channelDescription,
+        INITIAL_VIDEOS: videos,
+        INITIAL_SHORTS: shorts,
+        INITIAL_ACTIVITIES: activities,
+        INITIAL_PLAYLISTS: playlists,
+        INITIAL_CREDENTIALS: credentials,
+    };
+    const fileContent = JSON.stringify(dataToExport, null, 2);
+    const blob = new Blob([fileContent], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'data.ts.txt';
+    link.download = 'data.json';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    alert('تم إنشاء ملف البيانات. قم بنسخ محتواه إلى ملف "data.ts" في مشروعك لنشر التغييرات.');
+    alert('تم إنشاء ملف البيانات. قم باستبدال ملف "data.json" في مشروعك لنشر التغييرات.');
   };
 
   const handleLogoUpload = (file: File) => {
@@ -250,6 +273,16 @@ export const INITIAL_CREDENTIALS = { username: ${JSON.stringify(credentials.user
     : videos.filter(video => 
         playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(video.id)
     );
+
+  if (isLoading) {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-sky-50">
+            <div className="text-2xl font-bold text-sky-600 animate-pulse">
+                ...جاري تحميل القناة
+            </div>
+        </div>
+    );
+  }
 
   return (
     <div className="min-h-screen relative">
