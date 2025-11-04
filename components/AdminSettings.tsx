@@ -53,6 +53,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onCredentialsChange, curr
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition"
+                            autoComplete="username"
                         />
                     </div>
                     <div>
@@ -65,6 +66,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onCredentialsChange, curr
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition"
+                            autoComplete="current-password"
                         />
                     </div>
                     <button
@@ -86,11 +88,11 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ onCredentialsChange, curr
                 <form onSubmit={handleSyncSubmit} className="space-y-4">
                     <div>
                         <label htmlFor="gist-url" className="block text-right text-gray-700 font-semibold mb-1">رابط Gist Raw للمزامنة</label>
-                        <input id="gist-url" type="url" value={gistUrl} onChange={(e) => setGistUrl(e.target.value)} placeholder="https://gist.githubusercontent.com/user/123.../raw/data.json" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" />
+                        <input id="gist-url" type="url" value={gistUrl} onChange={(e) => setGistUrl(e.target.value)} placeholder="https://gist.githubusercontent.com/user/123.../raw/data.json" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" autoComplete="off" />
                     </div>
                     <div>
                         <label htmlFor="github-token" className="block text-right text-gray-700 font-semibold mb-1">GitHub Personal Access Token</label>
-                        <input id="github-token" type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" />
+                        <input id="github-token" type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" autoComplete="new-password" />
                     </div>
                     <button type="submit" className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition-colors duration-300 shadow-lg text-md">
                         حفظ إعدادات المزامنة
