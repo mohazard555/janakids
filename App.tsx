@@ -125,82 +125,94 @@ const App: React.FC = () => {
   // Effect for initial data loading
   useEffect(() => {
     const loadInitialData = async () => {
-      setIsLoading(true);
-      
-      const savedSyncSettings = localStorage.getItem('janaKidsSyncSettings');
-      const savedCredentials = localStorage.getItem('janaKidsCredentials');
+        setIsLoading(true);
 
-      if (savedCredentials) {
-        setCredentials(JSON.parse(savedCredentials));
-      }
+        const savedSyncSettingsRaw = localStorage.getItem('janaKidsSyncSettings');
+        const savedCredentials = localStorage.getItem('janaKidsCredentials');
 
-      const localDataRaw = localStorage.getItem('janaKidsContent');
-      
-      if (localDataRaw) {
-        // If local data exists, prioritize it as the source of truth
-        if (savedSyncSettings) {
-            setSyncSettings(JSON.parse(savedSyncSettings));
+        if (savedCredentials) {
+            setCredentials(JSON.parse(savedCredentials));
         }
-        try {
-            const localData = JSON.parse(localDataRaw);
-            const loadedVideos = localData.videos ?? [];
-            setVideos(loadedVideos);
-            setShorts(localData.shorts ?? []);
-            setActivities(localData.activities ?? []);
-            setChannelLogo(localData.channelLogo ?? null);
-            setPlaylists(localData.playlists ?? []);
-            setChannelDescription(localData.channelDescription ?? channelDescription);
-            
-            const migratedAdSettings = migrateAdSettings(localData.adSettings);
-            setAdSettings(migratedAdSettings);
-            
-            const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
-            const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
-            const allVideoIds = loadedVideos.map((v: Video) => v.id);
-            const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
-            setNewVideoIds(newIds);
-            
-            console.log("Data loaded from local storage.");
-        } catch(e) {
-            console.error("Could not parse local storage data.", e);
-        }
-      } else if (savedSyncSettings) {
-        // If local storage is empty, fetch from Gist as a one-time seed
-        const settings: GistSyncSettings = JSON.parse(savedSyncSettings);
-        setSyncSettings(settings);
-        if (settings.gistUrl) {
-          try {
-            const fetchUrl = `${settings.gistUrl}?cache_bust=${new Date().getTime()}`;
-            console.log("Local storage empty. Fetching initial data from Gist:", fetchUrl);
-            const response = await fetch(fetchUrl);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const data = await response.json();
-            
-            // Set state from Gist data
-            setVideos(data.videos ?? []);
-            setShorts(data.shorts ?? []);
-            setActivities(data.activities ?? []);
-            setChannelLogo(data.channelLogo ?? null);
-            setPlaylists(data.playlists ?? []);
-            setChannelDescription(data.channelDescription ?? channelDescription);
-            
-            const migratedAdSettings = migrateAdSettings(data.adSettings);
-            setAdSettings(migratedAdSettings);
 
-            // Save the fetched Gist data to local storage for future loads
-            localStorage.setItem('janaKidsContent', JSON.stringify(data));
-            console.log("Data loaded from Gist and populated local storage.");
+        let dataLoadedFromRemote = false;
 
-          } catch (error) {
-            console.error("Failed to fetch initial data from Gist", error);
-            setToastMessage({ text: 'فشل تحميل البيانات من Gist.', type: 'error' });
-          }
+        // --- Gist-First Approach ---
+        if (savedSyncSettingsRaw) {
+            const settings: GistSyncSettings = JSON.parse(savedSyncSettingsRaw);
+            setSyncSettings(settings); // Set settings in state regardless of fetch success
+
+            if (settings.gistUrl) {
+                try {
+                    const fetchUrl = `${settings.gistUrl}?cache_bust=${new Date().getTime()}`;
+                    console.log("Sync is enabled. Fetching latest data from Gist:", fetchUrl);
+                    const response = await fetch(fetchUrl);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    const remoteData = await response.json();
+
+                    // Set state from Gist data
+                    const loadedVideos = remoteData.videos ?? [];
+                    setVideos(loadedVideos);
+                    setShorts(remoteData.shorts ?? []);
+                    setActivities(remoteData.activities ?? []);
+                    setChannelLogo(remoteData.channelLogo ?? null);
+                    setPlaylists(remoteData.playlists ?? []);
+                    setChannelDescription(remoteData.channelDescription ?? channelDescription);
+
+                    const migratedAdSettings = migrateAdSettings(remoteData.adSettings);
+                    setAdSettings(migratedAdSettings);
+
+                    // Update local cache with fresh data from Gist
+                    localStorage.setItem('janaKidsContent', JSON.stringify(remoteData));
+                    console.log("Data loaded from Gist. Local cache updated.");
+
+                    const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
+                    const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
+                    const allVideoIds = loadedVideos.map((v: Video) => v.id);
+                    const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
+                    setNewVideoIds(newIds);
+
+                    dataLoadedFromRemote = true;
+
+                } catch (error) {
+                    console.error("Failed to fetch from Gist. Will attempt to load from local cache.", error);
+                    setToastMessage({ text: 'فشل الإتصال، سيتم عرض نسخة محفوظة.', type: 'error' });
+                }
+            }
         }
-      } else {
-        console.log("No local data or Gist settings. Starting fresh.");
-      }
-      
-      setIsLoading(false);
+
+        // --- Fallback to Local Storage ---
+        if (!dataLoadedFromRemote) {
+            const localDataRaw = localStorage.getItem('janaKidsContent');
+            if (localDataRaw) {
+                try {
+                    console.log("Loading data from local storage cache.");
+                    const localData = JSON.parse(localDataRaw);
+                    const loadedVideos = localData.videos ?? [];
+                    setVideos(loadedVideos);
+                    setShorts(localData.shorts ?? []);
+                    setActivities(localData.activities ?? []);
+                    setChannelLogo(localData.channelLogo ?? null);
+                    setPlaylists(localData.playlists ?? []);
+                    setChannelDescription(localData.channelDescription ?? channelDescription);
+
+                    const migratedAdSettings = migrateAdSettings(localData.adSettings);
+                    setAdSettings(migratedAdSettings);
+
+                    const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
+                    const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
+                    const allVideoIds = loadedVideos.map((v: Video) => v.id);
+                    const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
+                    setNewVideoIds(newIds);
+
+                } catch (e) {
+                    console.error("Could not parse local storage data.", e);
+                }
+            } else {
+                console.log("No remote or local data found. Starting fresh.");
+            }
+        }
+
+        setIsLoading(false);
     };
     loadInitialData();
   }, []);
