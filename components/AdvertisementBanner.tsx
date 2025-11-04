@@ -1,8 +1,8 @@
 import React from 'react';
-import type { AdSettings } from '../types';
+import type { Ad } from '../types';
 
 interface AdvertisementBannerProps {
-  ad: AdSettings;
+  ad: Ad;
   onClose: () => void;
 }
 

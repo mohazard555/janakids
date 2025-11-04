@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AdSettings } from '../types';
+import type { AdSettings, Ad } from '../types';
 
 interface GistSyncSettings {
     gistUrl: string;
@@ -23,31 +23,48 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     onAdSettingsChange,
     currentAdSettings
 }) => {
+    // Credentials State
     const [username, setUsername] = useState(currentCredentials.username);
     const [password, setPassword] = useState(currentCredentials.password);
+
+    // Sync State
     const [gistUrl, setGistUrl] = useState('');
     const [githubToken, setGithubToken] = useState('');
 
-    const [adEnabled, setAdEnabled] = useState(false);
-    const [adText, setAdText] = useState('');
-    const [adLink, setAdLink] = useState('');
-    const [adImageFile, setAdImageFile] = useState<File | null>(null);
-    const [removeAdImage, setRemoveAdImage] = useState(false);
+    // Ads Management State
+    const [localAds, setLocalAds] = useState<Ad[]>([]);
     const [ctaEnabled, setCtaEnabled] = useState(false);
     const [ctaText, setCtaText] = useState('');
     const [ctaLink, setCtaLink] = useState('');
 
+    // Ad Add/Edit Form State
+    const [editingAd, setEditingAd] = useState<Ad | null>(null);
+    const [adText, setAdText] = useState('');
+    const [adLink, setAdLink] = useState('');
+    const [adImageFile, setAdImageFile] = useState<File | null>(null);
+    const [adImagePreview, setAdImagePreview] = useState<string | null>(null);
+
     useEffect(() => {
         setGistUrl(currentSyncSettings.gistUrl || '');
         setGithubToken(currentSyncSettings.githubToken || '');
-        setAdEnabled(currentAdSettings.enabled);
-        setAdText(currentAdSettings.text);
-        setAdLink(currentAdSettings.link);
+        setLocalAds(currentAdSettings.ads || []);
         setCtaEnabled(currentAdSettings.ctaEnabled);
         setCtaText(currentAdSettings.ctaText);
         setCtaLink(currentAdSettings.ctaLink);
-        setRemoveAdImage(false); // Reset on prop change
     }, [currentSyncSettings, currentAdSettings]);
+
+    useEffect(() => {
+        if (adImageFile) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setAdImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(adImageFile);
+        } else {
+            setAdImagePreview(null);
+        }
+    }, [adImageFile]);
+
 
     const handleCredentialsSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -64,43 +81,75 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         onSyncSettingsChange({ gistUrl, githubToken });
     };
 
-    const handleAdSettingsSubmit = (e: React.FormEvent) => {
+    const handleSaveAllAdSettings = (e: React.FormEvent) => {
         e.preventDefault();
-        
-        const willHaveImage = (adImageFile || currentAdSettings.imageUrl) && !removeAdImage;
-        if (adEnabled && (!adText || !willHaveImage)) {
-            alert('عند تفعيل الإعلان، يجب توفير نص وصورة.');
+        onAdSettingsChange({
+            ads: localAds,
+            ctaEnabled,
+            ctaText,
+            ctaLink
+        });
+    };
+
+    const resetAdForm = () => {
+        setEditingAd(null);
+        setAdText('');
+        setAdLink('');
+        setAdImageFile(null);
+        setAdImagePreview(null);
+        const fileInput = document.getElementById('ad-image-form') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+    };
+
+    const handleStartEdit = (ad: Ad) => {
+        setEditingAd(ad);
+        setAdText(ad.text);
+        setAdLink(ad.link);
+        setAdImageFile(null);
+        setAdImagePreview(ad.imageUrl);
+    };
+
+    const handleDeleteAd = (id: number) => {
+        if (window.confirm('هل أنت متأكد من حذف هذا الإعلان؟')) {
+            setLocalAds(prev => prev.filter(ad => ad.id !== id));
+        }
+    };
+    
+    const handleAddOrUpdateAd = () => {
+        if (!adText || (!adImageFile && !editingAd?.imageUrl)) {
+            alert('يجب توفير نص وصورة للإعلان.');
             return;
         }
 
-        const submitData = (finalImageUrl: string | null) => {
-            onAdSettingsChange({
-                enabled: adEnabled,
-                text: adText,
-                link: adLink,
-                imageUrl: finalImageUrl,
-                ctaEnabled,
-                ctaText,
-                ctaLink
-            });
-            const fileInput = document.getElementById('ad-image') as HTMLInputElement;
-            if (fileInput) fileInput.value = '';
-            setAdImageFile(null);
-            setRemoveAdImage(false);
+        const processAd = (imageUrl: string | null) => {
+            if (editingAd) {
+                // Update existing ad
+                const updatedAd = { ...editingAd, text: adText, link: adLink, imageUrl: imageUrl };
+                setLocalAds(prev => prev.map(ad => ad.id === editingAd.id ? updatedAd : ad));
+            } else {
+                // Add new ad
+                const newAd: Ad = {
+                    id: Date.now(),
+                    text: adText,
+                    link: adLink,
+                    imageUrl: imageUrl
+                };
+                setLocalAds(prev => [...prev, newAd]);
+            }
+            resetAdForm();
         };
-        
-        if (removeAdImage) {
-            submitData(null);
-        } else if (adImageFile) {
+
+        if (adImageFile) {
             const reader = new FileReader();
             reader.onloadend = () => {
-                submitData(reader.result as string);
+                processAd(reader.result as string);
             };
             reader.readAsDataURL(adImageFile);
         } else {
-            submitData(currentAdSettings.imageUrl);
+            processAd(editingAd?.imageUrl || null);
         }
     };
+
 
     return (
         <div className="bg-white p-6 rounded-2xl shadow-md h-full flex flex-col justify-between">
@@ -111,95 +160,86 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                         <label htmlFor="admin-username" className="block text-right text-gray-700 font-semibold mb-1">
                             اسم مستخدم الأدمن
                         </label>
-                        <input
-                            id="admin-username"
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition"
-                            autoComplete="username"
-                        />
+                        <input id="admin-username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition" autoComplete="username" />
                     </div>
                     <div>
                         <label htmlFor="admin-password" className="block text-right text-gray-700 font-semibold mb-1">
                             كلمة مرور الأدمن
                         </label>
-                        <input
-                            id="admin-password"
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition"
-                            autoComplete="current-password"
-                        />
+                        <input id="admin-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition" autoComplete="current-password" />
                     </div>
-                    <button
-                        type="submit"
-                        className="w-full bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors duration-300 shadow-lg text-lg"
-                    >
+                    <button type="submit" className="w-full bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors duration-300 shadow-lg text-lg">
                         حفظ بيانات الدخول
                     </button>
                 </form>
 
-                <div className="pt-6 border-t-2 border-dashed border-gray-200">
-                    <h3 className="text-xl font-bold text-center text-yellow-700 mb-4">إعدادات الإعلانات</h3>
-                    <form onSubmit={handleAdSettingsSubmit} className="space-y-4">
-                        <fieldset className="border border-gray-300 p-4 rounded-lg">
-                            <legend className="px-2 font-semibold text-yellow-800">الإعلان الرئيسي</legend>
-                             <div className="flex items-center justify-center mb-4">
-                                <label htmlFor="ad-enabled" className="text-gray-700 font-semibold ml-3">تفعيل الإعلان</label>
-                                <input id="ad-enabled" type="checkbox" checked={adEnabled} onChange={(e) => setAdEnabled(e.target.checked)} className="w-6 h-6 rounded text-yellow-500 focus:ring-yellow-400"/>
-                            </div>
-                            <div>
-                                <label htmlFor="ad-text" className="block text-right text-gray-700 font-semibold mb-1">نص الإعلان</label>
-                                <input id="ad-text" type="text" value={adText} onChange={(e) => setAdText(e.target.value)} placeholder="عرض خاص لفترة محدودة!" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 transition" />
-                            </div>
-                            <div>
-                                <label htmlFor="ad-link" className="block text-right text-gray-700 font-semibold mb-1">رابط الإعلان (اختياري)</label>
-                                <input id="ad-link" type="url" value={adLink} onChange={(e) => setAdLink(e.target.value)} placeholder="https://example.com" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 transition" dir="ltr" />
-                            </div>
-                            <div>
-                                <label htmlFor="ad-image" className="block text-right text-gray-700 font-semibold mb-1">صورة الإعلان</label>
-                                <input id="ad-image" type="file" accept="image/*" onChange={(e) => { setAdImageFile(e.target.files ? e.target.files[0] : null); setRemoveAdImage(false); }} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-yellow-100 file:text-yellow-700 hover:file:bg-yellow-200"/>
-                                {currentAdSettings.imageUrl && !adImageFile && !removeAdImage && (
-                                    <div className="flex items-center justify-between mt-1">
-                                        <p className="text-xs text-gray-500 text-right">تم رفع صورة بالفعل.</p>
-                                        <button 
-                                            type="button"
-                                            onClick={() => setRemoveAdImage(true)}
-                                            className="text-xs bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded-md font-semibold"
-                                        >
-                                            حذف الصورة
-                                        </button>
+                <form onSubmit={handleSaveAllAdSettings} className="pt-6 border-t-2 border-dashed border-gray-200">
+                    <h3 className="text-xl font-bold text-center text-yellow-700 mb-4">إدارة الإعلانات</h3>
+                    
+                    <fieldset className="border border-gray-300 p-4 rounded-lg mb-4">
+                        <legend className="px-2 font-semibold text-yellow-800">الإعلانات الرئيسية</legend>
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                            {localAds.map(ad => (
+                                <div key={ad.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                                    <img src={ad.imageUrl || undefined} alt={ad.text} className="w-12 h-12 object-cover rounded-md flex-shrink-0 mr-3" />
+                                    <p className="flex-grow text-sm text-gray-700 truncate">{ad.text}</p>
+                                    <div className="flex space-x-2 flex-shrink-0">
+                                        <button type="button" onClick={() => handleStartEdit(ad)} className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-1 rounded-md font-semibold">تعديل</button>
+                                        <button type="button" onClick={() => handleDeleteAd(ad.id)} className="text-xs bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded-md font-semibold">حذف</button>
                                     </div>
-                                )}
-                                {removeAdImage && (
-                                    <p className="text-xs text-red-600 mt-1 text-right font-semibold">سيتم حذف الصورة عند الحفظ.</p>
-                                )}
-                            </div>
-                        </fieldset>
-                        
-                        <fieldset className="border border-gray-300 p-4 rounded-lg">
-                            <legend className="px-2 font-semibold text-green-800">أيقونة "أعلن معنا"</legend>
-                            <div className="flex items-center justify-center mb-4">
-                                <label htmlFor="cta-enabled" className="text-gray-700 font-semibold ml-3">تفعيل الأيقونة</label>
-                                <input id="cta-enabled" type="checkbox" checked={ctaEnabled} onChange={(e) => setCtaEnabled(e.target.checked)} className="w-6 h-6 rounded text-green-500 focus:ring-green-400"/>
-                            </div>
-                             <div>
-                                <label htmlFor="cta-text" className="block text-right text-gray-700 font-semibold mb-1">نص الأيقونة</label>
-                                <input id="cta-text" type="text" value={ctaText} onChange={(e) => setCtaText(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" />
-                            </div>
-                             <div>
-                                <label htmlFor="cta-link" className="block text-right text-gray-700 font-semibold mb-1">رابط (اختياري)</label>
-                                <input id="cta-link" type="url" value={ctaLink} onChange={(e) => setCtaLink(e.target.value)} placeholder="https://example.com/advertise" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" dir="ltr" />
-                            </div>
-                        </fieldset>
+                                </div>
+                            ))}
+                        </div>
+                        {localAds.length === 0 && <p className="text-center text-gray-500 py-4">لا توجد إعلانات حالياً.</p>}
+                    </fieldset>
 
-                        <button type="submit" className="w-full bg-yellow-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-yellow-600 transition-colors duration-300 shadow-lg text-md">
-                            حفظ كل إعدادات الإعلانات
-                        </button>
-                    </form>
-                </div>
+                     <fieldset className="border border-gray-300 p-4 rounded-lg space-y-4 mb-4">
+                        <legend className="px-2 font-semibold text-yellow-800">{editingAd ? 'تعديل الإعلان' : 'إضافة إعلان جديد'}</legend>
+                         <div>
+                            <label htmlFor="ad-text-form" className="block text-right text-gray-700 font-semibold mb-1">نص الإعلان</label>
+                            <input id="ad-text-form" type="text" value={adText} onChange={(e) => setAdText(e.target.value)} placeholder="عرض خاص لفترة محدودة!" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 transition" />
+                        </div>
+                        <div>
+                            <label htmlFor="ad-link-form" className="block text-right text-gray-700 font-semibold mb-1">رابط الإعلان (اختياري)</label>
+                            <input id="ad-link-form" type="url" value={adLink} onChange={(e) => setAdLink(e.target.value)} placeholder="https://example.com" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 transition" dir="ltr" />
+                        </div>
+                        <div>
+                            <label htmlFor="ad-image-form" className="block text-right text-gray-700 font-semibold mb-1">صورة الإعلان</label>
+                            <input id="ad-image-form" type="file" accept="image/*" onChange={(e) => setAdImageFile(e.target.files ? e.target.files[0] : null)} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-yellow-100 file:text-yellow-700 hover:file:bg-yellow-200"/>
+                             {(adImagePreview) && <img src={adImagePreview} alt="Preview" className="mt-2 w-24 h-24 object-cover rounded-md mx-auto"/>}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                             <button type="button" onClick={handleAddOrUpdateAd} className="w-full bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors">
+                                {editingAd ? 'حفظ التعديلات' : 'إضافة الإعلان'}
+                            </button>
+                            {editingAd && (
+                                <button type="button" onClick={resetAdForm} className="w-full bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">
+                                    إلغاء التعديل
+                                </button>
+                            )}
+                        </div>
+                    </fieldset>
+
+                    <fieldset className="border border-gray-300 p-4 rounded-lg mb-4">
+                        <legend className="px-2 font-semibold text-green-800">أيقونة "أعلن معنا"</legend>
+                        <div className="flex items-center justify-center mb-4">
+                            <label htmlFor="cta-enabled" className="text-gray-700 font-semibold ml-3">تفعيل الأيقونة</label>
+                            <input id="cta-enabled" type="checkbox" checked={ctaEnabled} onChange={(e) => setCtaEnabled(e.target.checked)} className="w-6 h-6 rounded text-green-500 focus:ring-green-400"/>
+                        </div>
+                         <div>
+                            <label htmlFor="cta-text" className="block text-right text-gray-700 font-semibold mb-1">نص الأيقونة</label>
+                            <input id="cta-text" type="text" value={ctaText} onChange={(e) => setCtaText(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" />
+                        </div>
+                         <div>
+                            <label htmlFor="cta-link" className="block text-right text-gray-700 font-semibold mb-1">رابط (اختياري)</label>
+                            <input id="cta-link" type="url" value={ctaLink} onChange={(e) => setCtaLink(e.target.value)} placeholder="https://example.com/advertise" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" dir="ltr" />
+                        </div>
+                    </fieldset>
+
+                    <button type="submit" className="w-full bg-yellow-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-yellow-600 transition-colors duration-300 shadow-lg text-md">
+                        حفظ كل إعدادات الإعلانات
+                    </button>
+                </form>
             </div>
             
             <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200">

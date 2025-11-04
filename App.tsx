@@ -18,7 +18,7 @@ import NotificationBell from './components/NotificationBell';
 import NotificationPanel from './components/NotificationPanel';
 import AdvertisementBanner from './components/AdvertisementBanner';
 import AdvertiserCta from './components/AdvertiserCta';
-import type { Video, Playlist, Activity, AdSettings } from './types';
+import type { Video, Playlist, Activity, AdSettings, Ad } from './types';
 
 interface GistSyncSettings {
     gistUrl: string;
@@ -48,10 +48,7 @@ const cleanGistUrl = (url: string): string => {
 
 const App: React.FC = () => {
   const defaultAdSettings: AdSettings = { 
-    enabled: false, 
-    text: '', 
-    imageUrl: null, 
-    link: '',
+    ads: [],
     ctaEnabled: false,
     ctaText: 'للإعلان معنا',
     ctaLink: ''
@@ -77,12 +74,38 @@ const App: React.FC = () => {
   const [newVideoIds, setNewVideoIds] = useState<number[]>([]);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [isAdVisible, setIsAdVisible] = useState(true);
+  const [currentAd, setCurrentAd] = useState<Ad | null>(null);
+
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
   const [syncSettings, setSyncSettings] = useState<GistSyncSettings>({ gistUrl: '', githubToken: '' });
 
   const syncTimerRef = useRef<number | null>(null);
+
+  const migrateAdSettings = (loadedAdSettings: any): AdSettings => {
+    if (loadedAdSettings && typeof loadedAdSettings.enabled !== 'undefined') {
+        const oldSettings = loadedAdSettings;
+        const newSettings: AdSettings = {
+            ads: [],
+            ctaEnabled: oldSettings.ctaEnabled ?? false,
+            ctaText: oldSettings.ctaText ?? 'للإعلان معنا',
+            ctaLink: oldSettings.ctaLink ?? ''
+        };
+        if (oldSettings.enabled && oldSettings.text && oldSettings.imageUrl) {
+            newSettings.ads.push({
+                id: Date.now(),
+                text: oldSettings.text,
+                imageUrl: oldSettings.imageUrl,
+                link: oldSettings.link
+            });
+        }
+        return newSettings;
+    }
+    // It's the new structure or default
+    return { ...defaultAdSettings, ...loadedAdSettings };
+  };
+
 
   // Effect for initial data loading
   useEffect(() => {
@@ -113,8 +136,8 @@ const App: React.FC = () => {
             setPlaylists(localData.playlists ?? []);
             setChannelDescription(localData.channelDescription ?? channelDescription);
             
-            const loadedAdSettings = localData.adSettings ?? {};
-            setAdSettings({ ...defaultAdSettings, ...loadedAdSettings });
+            const migratedAdSettings = migrateAdSettings(localData.adSettings);
+            setAdSettings(migratedAdSettings);
             
             const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
             const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
@@ -146,8 +169,8 @@ const App: React.FC = () => {
             setPlaylists(data.playlists ?? []);
             setChannelDescription(data.channelDescription ?? channelDescription);
             
-            const loadedAdSettings = data.adSettings ?? {};
-            setAdSettings({ ...defaultAdSettings, ...loadedAdSettings });
+            const migratedAdSettings = migrateAdSettings(data.adSettings);
+            setAdSettings(migratedAdSettings);
 
             // Save the fetched Gist data to local storage for future loads
             localStorage.setItem('janaKidsContent', JSON.stringify(data));
@@ -166,6 +189,22 @@ const App: React.FC = () => {
     };
     loadInitialData();
   }, []);
+
+  // Effect to select a random ad to display
+  useEffect(() => {
+    if (adSettings.ads && adSettings.ads.length > 0) {
+      const activeAds = adSettings.ads.filter(ad => ad.imageUrl);
+      if (activeAds.length > 0) {
+        const randomIndex = Math.floor(Math.random() * activeAds.length);
+        setCurrentAd(activeAds[randomIndex]);
+      } else {
+        setCurrentAd(null);
+      }
+    } else {
+      setCurrentAd(null);
+    }
+  }, [adSettings.ads]);
+
 
   // Effect for syncing data to Gist on change (debounced)
   useEffect(() => {
@@ -507,8 +546,8 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {adSettings.enabled && adSettings.imageUrl && isAdVisible && (
-        <AdvertisementBanner ad={adSettings} onClose={() => setIsAdVisible(false)} />
+      {currentAd && isAdVisible && (
+        <AdvertisementBanner ad={currentAd} onClose={() => setIsAdVisible(false)} />
       )}
 
       {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}

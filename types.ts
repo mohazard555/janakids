@@ -19,11 +19,15 @@ export interface Activity {
   imageUrl: string;
 }
 
-export interface AdSettings {
-  enabled: boolean;
+export interface Ad {
+  id: number;
   text: string;
   imageUrl: string | null;
   link: string;
+}
+
+export interface AdSettings {
+  ads: Ad[];
   ctaEnabled: boolean;
   ctaText: string;
   ctaLink: string;
