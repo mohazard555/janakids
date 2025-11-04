@@ -76,9 +76,13 @@ const App: React.FC = () => {
         setCredentials(JSON.parse(savedCredentials));
       }
 
-      // First, try loading from local storage to provide immediate content
       const localDataRaw = localStorage.getItem('janaKidsContent');
+      
       if (localDataRaw) {
+        // If local data exists, prioritize it as the source of truth
+        if (savedSyncSettings) {
+            setSyncSettings(JSON.parse(savedSyncSettings));
+        }
         try {
             const localData = JSON.parse(localDataRaw);
             setVideos(localData.videos ?? []);
@@ -86,40 +90,42 @@ const App: React.FC = () => {
             setActivities(localData.activities ?? []);
             setChannelLogo(localData.channelLogo ?? null);
             setPlaylists(localData.playlists ?? []);
-            setChannelDescription(localData.channelDescription ?? '');
+            setChannelDescription(localData.channelDescription ?? channelDescription);
             console.log("Data loaded from local storage.");
         } catch(e) {
             console.error("Could not parse local storage data.", e);
         }
-      }
-
-      // Then, if Gist is configured, fetch it as the source of truth
-      if (savedSyncSettings) {
+      } else if (savedSyncSettings) {
+        // If local storage is empty, fetch from Gist as a one-time seed
         const settings: GistSyncSettings = JSON.parse(savedSyncSettings);
         setSyncSettings(settings);
         if (settings.gistUrl) {
           try {
             const fetchUrl = `${settings.gistUrl}?cache_bust=${new Date().getTime()}`;
-            console.log("Fetching latest data from Gist:", fetchUrl);
+            console.log("Local storage empty. Fetching initial data from Gist:", fetchUrl);
             const response = await fetch(fetchUrl);
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
+            
+            // Set state from Gist data
             setVideos(data.videos ?? []);
             setShorts(data.shorts ?? []);
             setActivities(data.activities ?? []);
             setChannelLogo(data.channelLogo ?? null);
             setPlaylists(data.playlists ?? []);
-            setChannelDescription(data.channelDescription ?? '');
-            console.log("Data loaded successfully from Gist.");
+            setChannelDescription(data.channelDescription ?? channelDescription);
+            
+            // Save the fetched Gist data to local storage for future loads
+            localStorage.setItem('janaKidsContent', JSON.stringify(data));
+            console.log("Data loaded from Gist and populated local storage.");
+
           } catch (error) {
             console.error("Failed to fetch initial data from Gist", error);
-            setToastMessage({ text: 'فشل تحميل البيانات من Gist. قد ترى محتوى قديماً أو محلياً.', type: 'error' });
+            setToastMessage({ text: 'فشل تحميل البيانات من Gist.', type: 'error' });
           }
         }
       } else {
-        console.log("No Gist sync settings found. Relying on local data if available.");
+        console.log("No local data or Gist settings. Starting fresh.");
       }
       
       setIsLoading(false);
@@ -250,7 +256,7 @@ const App: React.FC = () => {
       id: Date.now(),
       title: data.title,
       youtubeUrl: data.youtubeUrl,
-      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       views: 0,
     };
     setVideos(prev => [newVideo, ...prev]);
@@ -266,7 +272,7 @@ const App: React.FC = () => {
       id: Date.now(),
       title: data.title,
       youtubeUrl: data.youtubeUrl,
-      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       views: 0,
     };
     setShorts(prev => [newShort, ...prev]);
@@ -331,7 +337,7 @@ const App: React.FC = () => {
       alert('رابط يوتيوب غير صالح.');
       return;
     }
-    const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/sddefault.jpg`;
+    const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
     const updater = (list: Video[]) => list.map(v => v.id === updatedData.id ? { ...v, ...updatedData, thumbnailUrl } : v);
     setVideos(updater);
     setShorts(updater);
