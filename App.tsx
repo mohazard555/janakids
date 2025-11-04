@@ -76,13 +76,31 @@ const App: React.FC = () => {
         setCredentials(JSON.parse(savedCredentials));
       }
 
+      // First, try loading from local storage to provide immediate content
+      const localDataRaw = localStorage.getItem('janaKidsContent');
+      if (localDataRaw) {
+        try {
+            const localData = JSON.parse(localDataRaw);
+            setVideos(localData.videos ?? []);
+            setShorts(localData.shorts ?? []);
+            setActivities(localData.activities ?? []);
+            setChannelLogo(localData.channelLogo ?? null);
+            setPlaylists(localData.playlists ?? []);
+            setChannelDescription(localData.channelDescription ?? '');
+            console.log("Data loaded from local storage.");
+        } catch(e) {
+            console.error("Could not parse local storage data.", e);
+        }
+      }
+
+      // Then, if Gist is configured, fetch it as the source of truth
       if (savedSyncSettings) {
         const settings: GistSyncSettings = JSON.parse(savedSyncSettings);
         setSyncSettings(settings);
         if (settings.gistUrl) {
           try {
             const fetchUrl = `${settings.gistUrl}?cache_bust=${new Date().getTime()}`;
-            console.log("Fetching data from Gist:", fetchUrl);
+            console.log("Fetching latest data from Gist:", fetchUrl);
             const response = await fetch(fetchUrl);
             if (!response.ok) {
               throw new Error(`HTTP error! status: ${response.status}`);
@@ -97,11 +115,11 @@ const App: React.FC = () => {
             console.log("Data loaded successfully from Gist.");
           } catch (error) {
             console.error("Failed to fetch initial data from Gist", error);
-            setToastMessage({ text: 'فشل تحميل البيانات من Gist. قد ترى محتوى قديماً.', type: 'error' });
+            setToastMessage({ text: 'فشل تحميل البيانات من Gist. قد ترى محتوى قديماً أو محلياً.', type: 'error' });
           }
         }
       } else {
-        console.log("No Gist sync settings found. Starting with a blank slate.");
+        console.log("No Gist sync settings found. Relying on local data if available.");
       }
       
       setIsLoading(false);
@@ -176,6 +194,23 @@ const App: React.FC = () => {
       }
     };
   }, [videos, shorts, activities, channelLogo, playlists, channelDescription, isLoading, isLoggedIn, syncSettings]);
+
+  // Effect for saving content to local storage on any change
+  useEffect(() => {
+    if (isLoading) {
+      return; // Don't save anything during the initial load
+    }
+    const contentToSave = {
+        videos,
+        shorts,
+        activities,
+        channelLogo,
+        playlists,
+        channelDescription,
+    };
+    localStorage.setItem('janaKidsContent', JSON.stringify(contentToSave));
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, isLoading]);
+
 
   // Effect for saving credentials locally
   useEffect(() => {
