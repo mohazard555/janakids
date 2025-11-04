@@ -32,6 +32,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     const [adText, setAdText] = useState('');
     const [adLink, setAdLink] = useState('');
     const [adImageFile, setAdImageFile] = useState<File | null>(null);
+    const [removeAdImage, setRemoveAdImage] = useState(false);
     const [ctaEnabled, setCtaEnabled] = useState(false);
     const [ctaText, setCtaText] = useState('');
     const [ctaLink, setCtaLink] = useState('');
@@ -45,6 +46,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         setCtaEnabled(currentAdSettings.ctaEnabled);
         setCtaText(currentAdSettings.ctaText);
         setCtaLink(currentAdSettings.ctaLink);
+        setRemoveAdImage(false); // Reset on prop change
     }, [currentSyncSettings, currentAdSettings]);
 
     const handleCredentialsSubmit = (e: React.FormEvent) => {
@@ -65,34 +67,38 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     const handleAdSettingsSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         
-        if (adEnabled && (!adText || (!adImageFile && !currentAdSettings.imageUrl))) {
+        const willHaveImage = (adImageFile || currentAdSettings.imageUrl) && !removeAdImage;
+        if (adEnabled && (!adText || !willHaveImage)) {
             alert('عند تفعيل الإعلان، يجب توفير نص وصورة.');
             return;
         }
 
-        const processAndSubmit = (imageUrl: string | null) => {
+        const submitData = (finalImageUrl: string | null) => {
             onAdSettingsChange({
                 enabled: adEnabled,
                 text: adText,
                 link: adLink,
-                imageUrl: imageUrl,
+                imageUrl: finalImageUrl,
                 ctaEnabled,
                 ctaText,
                 ctaLink
             });
-             const fileInput = document.getElementById('ad-image') as HTMLInputElement;
-             if (fileInput) fileInput.value = '';
-             setAdImageFile(null);
-        }
+            const fileInput = document.getElementById('ad-image') as HTMLInputElement;
+            if (fileInput) fileInput.value = '';
+            setAdImageFile(null);
+            setRemoveAdImage(false);
+        };
         
-        if (adImageFile) {
+        if (removeAdImage) {
+            submitData(null);
+        } else if (adImageFile) {
             const reader = new FileReader();
             reader.onloadend = () => {
-                processAndSubmit(reader.result as string);
+                submitData(reader.result as string);
             };
             reader.readAsDataURL(adImageFile);
         } else {
-            processAndSubmit(currentAdSettings.imageUrl);
+            submitData(currentAdSettings.imageUrl);
         }
     };
 
@@ -154,8 +160,22 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                             </div>
                             <div>
                                 <label htmlFor="ad-image" className="block text-right text-gray-700 font-semibold mb-1">صورة الإعلان</label>
-                                <input id="ad-image" type="file" accept="image/*" onChange={(e) => setAdImageFile(e.target.files ? e.target.files[0] : null)} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-yellow-100 file:text-yellow-700 hover:file:bg-yellow-200"/>
-                                {currentAdSettings.imageUrl && !adImageFile && <p className="text-xs text-gray-500 mt-1 text-right">تم رفع صورة بالفعل. اختر ملف جديد لتغييرها.</p>}
+                                <input id="ad-image" type="file" accept="image/*" onChange={(e) => { setAdImageFile(e.target.files ? e.target.files[0] : null); setRemoveAdImage(false); }} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-yellow-100 file:text-yellow-700 hover:file:bg-yellow-200"/>
+                                {currentAdSettings.imageUrl && !adImageFile && !removeAdImage && (
+                                    <div className="flex items-center justify-between mt-1">
+                                        <p className="text-xs text-gray-500 text-right">تم رفع صورة بالفعل.</p>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setRemoveAdImage(true)}
+                                            className="text-xs bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded-md font-semibold"
+                                        >
+                                            حذف الصورة
+                                        </button>
+                                    </div>
+                                )}
+                                {removeAdImage && (
+                                    <p className="text-xs text-red-600 mt-1 text-right font-semibold">سيتم حذف الصورة عند الحفظ.</p>
+                                )}
                             </div>
                         </fieldset>
                         
