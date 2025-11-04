@@ -33,6 +33,14 @@ const getGistId = (url: string): string | null => {
     return match ? match[1] : null;
 };
 
+const cleanGistUrl = (url: string): string => {
+    if (!url) return '';
+    // This regex matches and removes the /raw/{commit_hash}/ part of a Gist URL
+    // ensuring the link always points to the latest version.
+    const commitHashRegex = /\/raw\/[a-f0-9]{40}\//;
+    return url.replace(commitHashRegex, '/raw/');
+};
+
 const App: React.FC = () => {
   // Content State
   const [videos, setVideos] = useState<Video[]>([]);
@@ -113,7 +121,8 @@ const App: React.FC = () => {
 
     syncTimerRef.current = window.setTimeout(async () => {
       const gistId = getGistId(syncSettings.gistUrl);
-      const filename = syncSettings.gistUrl.split('/').pop();
+      const rawFilename = syncSettings.gistUrl.split('/').pop();
+      const filename = rawFilename ? decodeURIComponent(rawFilename) : null;
 
       if (!gistId || !filename) {
         console.error("Invalid Gist URL format. Cannot extract Gist ID or filename.");
@@ -176,9 +185,17 @@ const App: React.FC = () => {
   }, [credentials, isLoading]);
 
   const handleSyncSettingsChange = (newSettings: GistSyncSettings) => {
-      setSyncSettings(newSettings);
-      localStorage.setItem('janaKidsSyncSettings', JSON.stringify(newSettings));
-      alert("تم حفظ إعدادات المزامنة. سيتم إعادة تحميل الصفحة لتطبيق التغييرات.");
+      const cleanedUrl = cleanGistUrl(newSettings.gistUrl);
+      const settingsToSave = { ...newSettings, gistUrl: cleanedUrl };
+      
+      setSyncSettings(settingsToSave);
+      localStorage.setItem('janaKidsSyncSettings', JSON.stringify(settingsToSave));
+      
+      if (newSettings.gistUrl && newSettings.gistUrl !== cleanedUrl) {
+        alert("ملاحظة: لقد تم تعديل رابط Gist تلقائياً لضمان الإشارة دائماً إلى أحدث محتوى. سيتم الآن إعادة تحميل الصفحة.");
+      } else {
+        alert("تم حفظ إعدادات المزامنة. سيتم إعادة تحميل الصفحة لتطبيق التغييرات.");
+      }
       window.location.reload();
   };
 
