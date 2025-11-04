@@ -12,7 +12,7 @@ interface VideoCardProps {
 }
 
 const EyeIcon: React.FC = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1 text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
         <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
         <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
     </svg>
@@ -44,8 +44,8 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isAdmin, playlists, onAddT
       <div className="p-5 flex-grow flex flex-col">
         <h3 className="text-xl font-bold text-gray-800 h-16">{video.title}</h3>
         <div className="flex items-center justify-between mt-4">
-          <div className="flex items-center bg-gray-100 rounded-full px-3 py-1">
-            <span className="font-semibold text-gray-700">{video.views.toLocaleString('ar-EG')}</span>
+          <div className="flex items-center bg-sky-100 text-sky-800 rounded-full px-3 py-1 text-sm">
+            <span className="font-bold">{video.views.toLocaleString('ar-EG')}</span>
             <EyeIcon />
           </div>
           <a

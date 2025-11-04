@@ -17,6 +17,7 @@ import SearchBar from './components/SearchBar';
 import NotificationBell from './components/NotificationBell';
 import NotificationPanel from './components/NotificationPanel';
 import AdvertisementBanner from './components/AdvertisementBanner';
+import AdvertiserCta from './components/AdvertiserCta';
 import type { Video, Playlist, Activity, AdSettings } from './types';
 
 interface GistSyncSettings {
@@ -46,6 +47,16 @@ const cleanGistUrl = (url: string): string => {
 };
 
 const App: React.FC = () => {
+  const defaultAdSettings: AdSettings = { 
+    enabled: false, 
+    text: '', 
+    imageUrl: null, 
+    link: '',
+    ctaEnabled: false,
+    ctaText: 'للإعلان معنا',
+    ctaLink: ''
+  };
+
   // Content State
   const [videos, setVideos] = useState<Video[]>([]);
   const [shorts, setShorts] = useState<Video[]>([]);
@@ -53,7 +64,7 @@ const App: React.FC = () => {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [channelLogo, setChannelLogo] = useState<string | null>(null);
   const [channelDescription, setChannelDescription] = useState('قناة جنى كيدز تقدم لكم أجمل قصص الأطفال التعليمية والترفيهية. انضموا إلينا في مغامرات شيقة وممتعة!');
-  const [adSettings, setAdSettings] = useState<AdSettings>({ enabled: false, text: '', imageUrl: null, link: '' });
+  const [adSettings, setAdSettings] = useState<AdSettings>(defaultAdSettings);
 
   // App Control State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -65,6 +76,7 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [newVideoIds, setNewVideoIds] = useState<number[]>([]);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
+  const [isAdVisible, setIsAdVisible] = useState(true);
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
@@ -100,7 +112,9 @@ const App: React.FC = () => {
             setChannelLogo(localData.channelLogo ?? null);
             setPlaylists(localData.playlists ?? []);
             setChannelDescription(localData.channelDescription ?? channelDescription);
-            setAdSettings(localData.adSettings ?? { enabled: false, text: '', imageUrl: null, link: '' });
+            
+            const loadedAdSettings = localData.adSettings ?? {};
+            setAdSettings({ ...defaultAdSettings, ...loadedAdSettings });
             
             const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
             const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
@@ -131,7 +145,9 @@ const App: React.FC = () => {
             setChannelLogo(data.channelLogo ?? null);
             setPlaylists(data.playlists ?? []);
             setChannelDescription(data.channelDescription ?? channelDescription);
-            setAdSettings(data.adSettings ?? { enabled: false, text: '', imageUrl: null, link: '' });
+            
+            const loadedAdSettings = data.adSettings ?? {};
+            setAdSettings({ ...defaultAdSettings, ...loadedAdSettings });
 
             // Save the fetched Gist data to local storage for future loads
             localStorage.setItem('janaKidsContent', JSON.stringify(data));
@@ -417,8 +433,6 @@ const App: React.FC = () => {
         onDescriptionChange={setChannelDescription}
       />
       <main className="container mx-auto px-4 py-10">
-        {adSettings.enabled && adSettings.imageUrl && <AdvertisementBanner ad={adSettings} />}
-
         <div className="my-8 flex justify-between items-center relative">
             <SearchBar query={searchQuery} onQueryChange={setSearchQuery} />
             <NotificationBell count={newVideoIds.length} onClick={handleToggleNotifications} />
@@ -492,6 +506,13 @@ const App: React.FC = () => {
           )}
         </div>
       </main>
+
+      {adSettings.enabled && adSettings.imageUrl && isAdVisible && (
+        <AdvertisementBanner ad={adSettings} onClose={() => setIsAdVisible(false)} />
+      )}
+
+      {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}
+      
       <Footer />
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
     </div>

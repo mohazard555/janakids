@@ -1,4 +1,3 @@
-
 export interface Video {
   id: number;
   title: string;
@@ -25,4 +24,7 @@ export interface AdSettings {
   text: string;
   imageUrl: string | null;
   link: string;
+  ctaEnabled: boolean;
+  ctaText: string;
+  ctaLink: string;
 }
