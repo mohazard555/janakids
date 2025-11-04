@@ -38,6 +38,21 @@ const getGistId = (url: string): string | null => {
     return match ? match[1] : null;
 };
 
+const fullyDecode = (uriComponent: string): string => {
+    let decoded = uriComponent;
+    try {
+        // Keep decoding as long as the string is changing and contains encoded characters.
+        while (decoded.includes('%') && decoded !== decodeURIComponent(decoded)) {
+            decoded = decodeURIComponent(decoded);
+        }
+    } catch (e) {
+        // This might happen if the URI is malformed.
+        // In that case, we return the last valid decoded string.
+        console.error("Malformed URI component during full decode. Returning partially decoded string.", e);
+    }
+    return decoded;
+};
+
 const cleanGistUrl = (url: string): string => {
     if (!url) return '';
     // This regex matches and removes the /raw/{commit_hash}/ part of a Gist URL
@@ -219,7 +234,7 @@ const App: React.FC = () => {
     syncTimerRef.current = window.setTimeout(async () => {
       const gistId = getGistId(syncSettings.gistUrl);
       const rawFilename = syncSettings.gistUrl.split('/').pop();
-      const filename = rawFilename ? decodeURIComponent(rawFilename) : null;
+      const filename = rawFilename ? fullyDecode(rawFilename) : null;
 
       if (!gistId || !filename) {
         console.error("Invalid Gist URL format. Cannot extract Gist ID or filename.");
@@ -227,7 +242,7 @@ const App: React.FC = () => {
         return;
       }
       
-      console.log("Syncing data to Gist...");
+      console.log(`Syncing data to Gist file: "${filename}"`);
 
       const contentToSync = {
         videos,
