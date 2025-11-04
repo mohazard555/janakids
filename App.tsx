@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import VideoCard from './components/VideoCard';
 import AddVideoForm from './components/AddVideoForm';
@@ -14,217 +14,239 @@ import AddActivityForm from './components/AddActivityForm';
 import ActivityCard from './components/ActivityCard';
 import type { Video, Playlist, Activity } from './types';
 
+interface GistSyncSettings {
+    gistUrl: string;
+    githubToken: string;
+}
+
 const getYoutubeVideoId = (url: string): string | null => {
   if (!url) return null;
-  // Standard, short, and shorts URLs
   const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/ ]{11})/;
   const match = url.match(regExp);
   return match ? match[1] : null;
 };
 
-const loadStateFromLocalStorage = () => {
-    try {
-        const serializedState = localStorage.getItem('janaKidsAppState');
-        if (serializedState === null) {
-            return undefined;
-        }
-        return JSON.parse(serializedState);
-    } catch (e) {
-        console.warn("Could not load state from localStorage", e);
-        return undefined;
-    }
-};
-
-const saveStateToLocalStorage = (state: any) => {
-    try {
-        const serializedState = JSON.stringify(state);
-        localStorage.setItem('janaKidsAppState', serializedState);
-    } catch (e) {
-        console.warn("Could not save state to localStorage", e);
-    }
+const getGistId = (url: string): string | null => {
+    if (!url) return null;
+    const match = url.match(/gist\.githubusercontent\.com\/[^\/]+\/([a-f0-9]+)\/raw/);
+    return match ? match[1] : null;
 };
 
 const App: React.FC = () => {
+  // Content State
   const [videos, setVideos] = useState<Video[]>([]);
   const [shorts, setShorts] = useState<Video[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [channelLogo, setChannelLogo] = useState<string | null>(null);
+  const [channelDescription, setChannelDescription] = useState('قناة جنى كيدز تقدم لكم أجمل قصص الأطفال التعليمية والترفيهية. انضموا إلينا في مغامرات شيقة وممتعة!');
+  
+  // App Control State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
-  const [channelDescription, setChannelDescription] = useState('');
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
   const [isLoading, setIsLoading] = useState(true);
 
+  // Settings State
+  const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
+  const [syncSettings, setSyncSettings] = useState<GistSyncSettings>({ gistUrl: '', githubToken: '' });
+
+  const syncTimerRef = useRef<number | null>(null);
+
+  // Effect for initial data loading
   useEffect(() => {
     const loadInitialData = async () => {
-      const persistedState = loadStateFromLocalStorage();
-      if (persistedState) {
-        setVideos(persistedState.videos ?? []);
-        setShorts(persistedState.shorts ?? []);
-        setActivities(persistedState.activities ?? []);
-        setChannelLogo(persistedState.channelLogo ?? null);
-        setPlaylists(persistedState.playlists ?? []);
-        setChannelDescription(persistedState.channelDescription ?? '');
-        setCredentials(persistedState.credentials ?? { username: "admin", password: "password" });
-        setIsLoading(false);
-      } else {
-        try {
-          const response = await fetch('/data.json');
-          if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          const data = await response.json();
-          setVideos(data.INITIAL_VIDEOS ?? []);
-          setShorts(data.INITIAL_SHORTS ?? []);
-          setActivities(data.INITIAL_ACTIVITIES ?? []);
-          setChannelLogo(data.INITIAL_CHANNEL_LOGO ?? null);
-          setPlaylists(data.INITIAL_PLAYLISTS ?? []);
-          setChannelDescription(data.INITIAL_CHANNEL_DESCRIPTION ?? '');
-          setCredentials(data.INITIAL_CREDENTIALS ?? { username: "admin", password: "password" });
-        } catch (error) {
-          console.error("Failed to fetch initial data from data.json", error);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
+      setIsLoading(true);
+      
+      const savedSyncSettings = localStorage.getItem('janaKidsSyncSettings');
+      const savedCredentials = localStorage.getItem('janaKidsCredentials');
 
+      if (savedCredentials) {
+        setCredentials(JSON.parse(savedCredentials));
+      }
+
+      if (savedSyncSettings) {
+        const settings: GistSyncSettings = JSON.parse(savedSyncSettings);
+        setSyncSettings(settings);
+        if (settings.gistUrl) {
+          try {
+            console.log("Fetching data from Gist:", settings.gistUrl);
+            const response = await fetch(settings.gistUrl);
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            setVideos(data.videos ?? []);
+            setShorts(data.shorts ?? []);
+            setActivities(data.activities ?? []);
+            setChannelLogo(data.channelLogo ?? null);
+            setPlaylists(data.playlists ?? []);
+            setChannelDescription(data.channelDescription ?? '');
+            console.log("Data loaded successfully from Gist.");
+          } catch (error) {
+            console.error("Failed to fetch initial data from Gist", error);
+            alert("فشل تحميل البيانات من Gist. الرجاء التحقق من الرابط أو إعدادات الشبكة.");
+          }
+        }
+      } else {
+        console.log("No Gist sync settings found. Starting with a blank slate.");
+      }
+      
+      setIsLoading(false);
+    };
     loadInitialData();
   }, []);
 
+  // Effect for syncing data to Gist on change (debounced)
   useEffect(() => {
-    // Don't save initial empty state on first render
-    if (isLoading) return; 
-    
-    const appState = {
+    if (isLoading || !isLoggedIn || !syncSettings.gistUrl || !syncSettings.githubToken) {
+      return;
+    }
+
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+    }
+
+    syncTimerRef.current = window.setTimeout(async () => {
+      const gistId = getGistId(syncSettings.gistUrl);
+      const filename = syncSettings.gistUrl.split('/').pop();
+
+      if (!gistId || !filename) {
+        console.error("Invalid Gist URL format. Cannot extract Gist ID or filename.");
+        return;
+      }
+      
+      console.log("Syncing data to Gist...");
+
+      const contentToSync = {
         videos,
         shorts,
         activities,
         channelLogo,
         playlists,
         channelDescription,
-        credentials,
-    };
-    saveStateToLocalStorage(appState);
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, credentials, isLoading]);
+      };
 
-  const handleExportData = () => {
-    const dataToExport = {
-        INITIAL_CHANNEL_LOGO: channelLogo,
-        INITIAL_CHANNEL_DESCRIPTION: channelDescription,
-        INITIAL_VIDEOS: videos,
-        INITIAL_SHORTS: shorts,
-        INITIAL_ACTIVITIES: activities,
-        INITIAL_PLAYLISTS: playlists,
-        INITIAL_CREDENTIALS: credentials,
+      try {
+        const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `token ${syncSettings.githubToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+          },
+          body: JSON.stringify({
+            files: {
+              [filename]: {
+                content: JSON.stringify(contentToSync, null, 2),
+              },
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`GitHub API Error: ${errorData.message}`);
+        }
+        console.log("Data synced to Gist successfully.");
+      } catch (error) {
+        console.error("Failed to sync data to Gist:", error);
+        alert(`حدث خطأ أثناء المزامنة مع Gist: ${error.message}`);
+      }
+
+    }, 2000); // 2-second debounce
+
+    return () => {
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+      }
     };
-    const fileContent = JSON.stringify(dataToExport, null, 2);
-    const blob = new Blob([fileContent], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'data.json';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    alert('تم إنشاء ملف البيانات. قم باستبدال ملف "data.json" في مشروعك لنشر التغييرات.');
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, isLoading, isLoggedIn, syncSettings]);
+
+  // Effect for saving credentials locally
+  useEffect(() => {
+    if(!isLoading) {
+        localStorage.setItem('janaKidsCredentials', JSON.stringify(credentials));
+    }
+  }, [credentials, isLoading]);
+
+  const handleSyncSettingsChange = (newSettings: GistSyncSettings) => {
+      setSyncSettings(newSettings);
+      localStorage.setItem('janaKidsSyncSettings', JSON.stringify(newSettings));
+      alert("تم حفظ إعدادات المزامنة. سيتم إعادة تحميل الصفحة لتطبيق التغييرات.");
+      window.location.reload();
   };
 
   const handleLogoUpload = (file: File) => {
     const reader = new FileReader();
-    reader.onloadend = () => {
-        setChannelLogo(reader.result as string);
-    };
+    reader.onloadend = () => setChannelLogo(reader.result as string);
     reader.readAsDataURL(file);
   };
 
-  const handleAddVideo = (newVideoData: { title: string; youtubeUrl: string }) => {
-    const videoId = getYoutubeVideoId(newVideoData.youtubeUrl);
+  const handleAddVideo = (data: { title: string; youtubeUrl: string }) => {
+    const videoId = getYoutubeVideoId(data.youtubeUrl);
     if (!videoId) {
-        alert('رابط يوتيوب غير صالح. الرجاء التأكد من الرابط والمحاولة مرة أخرى.');
-        return;
-    }
-    const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/sddefault.jpg`;
-
-    const newVideo: Video = {
-      id: Date.now(),
-      title: newVideoData.title,
-      youtubeUrl: newVideoData.youtubeUrl,
-      thumbnailUrl,
-      views: 0, 
-    };
-    setVideos(prevVideos => [newVideo, ...prevVideos]);
-  };
-
-  const handleAddShort = (newShortData: { title: string; youtubeUrl: string }) => {
-    const videoId = getYoutubeVideoId(newShortData.youtubeUrl);
-    if (!videoId) {
-      alert('رابط يوتيوب غير صالح للشورتات. الرجاء التأكد من الرابط والمحاولة مرة أخرى.');
+      alert('رابط يوتيوب غير صالح.');
       return;
     }
-    const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/sddefault.jpg`;
+    const newVideo: Video = {
+      id: Date.now(),
+      title: data.title,
+      youtubeUrl: data.youtubeUrl,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
+      views: 0,
+    };
+    setVideos(prev => [newVideo, ...prev]);
+  };
 
+  const handleAddShort = (data: { title: string; youtubeUrl: string }) => {
+    const videoId = getYoutubeVideoId(data.youtubeUrl);
+    if (!videoId) {
+      alert('رابط يوتيوب غير صالح.');
+      return;
+    }
     const newShort: Video = {
       id: Date.now(),
-      title: newShortData.title,
-      youtubeUrl: newShortData.youtubeUrl,
-      thumbnailUrl,
+      title: data.title,
+      youtubeUrl: data.youtubeUrl,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
       views: 0,
     };
     setShorts(prev => [newShort, ...prev]);
   };
 
-  const handleAddActivity = (newActivityData: { title: string; description: string; imageFile: File }) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-          const newActivity: Activity = {
-              id: Date.now(),
-              title: newActivityData.title,
-              description: newActivityData.description,
-              imageUrl: reader.result as string,
-          };
-          setActivities(prev => [newActivity, ...prev]);
+  const handleAddActivity = (data: { title: string; description: string; imageFile: File }) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const newActivity: Activity = {
+        id: Date.now(),
+        title: data.title,
+        description: data.description,
+        imageUrl: reader.result as string,
       };
-      reader.readAsDataURL(newActivityData.imageFile);
-  };
-
-  const handleDeleteActivity = (activityId: number) => {
-    setActivities(prev => prev.filter(a => a.id !== activityId));
+      setActivities(prev => [newActivity, ...prev]);
+    };
+    reader.readAsDataURL(data.imageFile);
   };
   
   const handleIncrementViewCount = (videoId: number) => {
-    const increment = (videoList: Video[]) =>
-      videoList.map(video =>
-        video.id === videoId ? { ...video, views: (video.views || 0) + 1 } : video
-      );
+    const increment = (list: Video[]) => list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
     setVideos(increment);
     setShorts(increment);
   };
 
-
   const handleCreatePlaylist = (name: string) => {
-    const newPlaylist: Playlist = {
-        id: Date.now(),
-        name,
-        videoIds: [],
-    };
+    const newPlaylist: Playlist = { id: Date.now(), name, videoIds: [] };
     setPlaylists(prev => [...prev, newPlaylist]);
   };
 
   const handleAddToPlaylist = (videoId: number, playlistId: number) => {
-    setPlaylists(prevPlaylists => 
-        prevPlaylists.map(playlist => {
-            if (playlist.id === playlistId) {
-                if (playlist.videoIds.includes(videoId)) return playlist;
-                return { ...playlist, videoIds: [...playlist.videoIds, videoId] };
-            }
-            return playlist;
-        })
-    );
+    setPlaylists(prev => prev.map(p => {
+      if (p.id === playlistId && !p.videoIds.includes(videoId)) {
+        return { ...p, videoIds: [...p.videoIds, videoId] };
+      }
+      return p;
+    }));
   };
   
   const handleLogin = (user: string, pass: string): boolean => {
@@ -239,71 +261,48 @@ const App: React.FC = () => {
   const handleDeleteVideo = (videoId: number) => {
     setVideos(prev => prev.filter(v => v.id !== videoId));
     setShorts(prev => prev.filter(s => s.id !== videoId));
-    setPlaylists(prev => 
-      prev.map(playlist => ({
-        ...playlist,
-        videoIds: playlist.videoIds.filter(id => id !== videoId)
-      }))
-    );
+    setPlaylists(prev => prev.map(p => ({ ...p, videoIds: p.videoIds.filter(id => id !== videoId) })));
   };
 
-  const handleUpdateVideo = (updatedVideoData: { id: number; title: string; youtubeUrl: string }) => {
-    const videoId = getYoutubeVideoId(updatedVideoData.youtubeUrl);
+  const handleDeleteActivity = (activityId: number) => {
+    setActivities(prev => prev.filter(a => a.id !== activityId));
+  };
+
+  const handleUpdateVideo = (updatedData: { id: number; title: string; youtubeUrl: string }) => {
+    const videoId = getYoutubeVideoId(updatedData.youtubeUrl);
     if (!videoId) {
-        alert('رابط يوتيوب غير صالح. الرجاء التأكد من الرابط والمحاولة مرة أخرى.');
-        return;
+      alert('رابط يوتيوب غير صالح.');
+      return;
     }
     const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/sddefault.jpg`;
-    
-    const updater = (prevVideos: Video[]) => 
-      prevVideos.map(video =>
-        video.id === updatedVideoData.id
-            ? { ...video, ...updatedVideoData, thumbnailUrl }
-            : video
-      );
-
+    const updater = (list: Video[]) => list.map(v => v.id === updatedData.id ? { ...v, ...updatedData, thumbnailUrl } : v);
     setVideos(updater);
     setShorts(updater);
-
     setEditingVideo(null);
   };
 
   const videosToDisplay = selectedPlaylistId === 'all' 
     ? videos 
-    : videos.filter(video => 
-        playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(video.id)
-    );
+    : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id));
 
   if (isLoading) {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-sky-50">
-            <div className="text-2xl font-bold text-sky-600 animate-pulse">
-                ...جاري تحميل القناة
-            </div>
+      <div className="min-h-screen flex items-center justify-center bg-sky-50">
+        <div className="text-2xl font-bold text-sky-600 animate-pulse">
+          ...جاري تحميل القناة
         </div>
+      </div>
     );
   }
 
   return (
     <div className="min-h-screen relative">
-      {/* Decorative Elements */}
       <div className="absolute top-1/4 left-5 sm:left-10 text-8xl opacity-10 select-none -z-10 transform -rotate-12 pointer-events-none" aria-hidden="true">🦁</div>
       <div className="absolute top-1/2 right-5 sm:right-10 text-8xl opacity-10 select-none -z-10 transform rotate-12 pointer-events-none" aria-hidden="true">🐘</div>
-      <div className="absolute bottom-1/4 left-1/3 text-6xl opacity-10 select-none -z-10 transform rotate-6 pointer-events-none" aria-hidden="true">🦒</div>
-      <div className="absolute top-3/4 right-1/4 text-7xl opacity-10 select-none -z-10 transform -rotate-6 pointer-events-none" aria-hidden="true">🐒</div>
-      <div className="absolute top-20 right-1/3 text-5xl opacity-15 select-none -z-10 pointer-events-none" aria-hidden="true">🌸</div>
-      <div className="absolute bottom-10 left-10 text-6xl opacity-15 select-none -z-10 pointer-events-none" aria-hidden="true">⭐</div>
-      <div className="absolute top-3/4 left-1/4 text-8xl opacity-10 select-none -z-10 pointer-events-none" aria-hidden="true">☀️</div>
 
       {showLoginModal && <LoginModal onLogin={handleLogin} onClose={() => setShowLoginModal(false)} />}
       
-      {editingVideo && (
-        <EditVideoModal 
-            video={editingVideo}
-            onUpdate={handleUpdateVideo}
-            onClose={() => setEditingVideo(null)}
-        />
-      )}
+      {editingVideo && <EditVideoModal video={editingVideo} onUpdate={handleUpdateVideo} onClose={() => setEditingVideo(null)} />}
 
       <Header 
         logo={channelLogo} 
@@ -328,7 +327,8 @@ const App: React.FC = () => {
                     <AdminSettings 
                         onCredentialsChange={setCredentials} 
                         currentCredentials={credentials}
-                        onExportData={handleExportData} 
+                        onSyncSettingsChange={handleSyncSettingsChange}
+                        currentSyncSettings={syncSettings}
                     />
                 </div>
             </div>
@@ -343,19 +343,10 @@ const App: React.FC = () => {
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
                     {activities.map(activity => (
-                        <ActivityCard 
-                            key={activity.id}
-                            activity={activity}
-                            isAdmin={isLoggedIn}
-                            onDeleteActivity={handleDeleteActivity}
-                        />
+                        <ActivityCard key={activity.id} activity={activity} isAdmin={isLoggedIn} onDeleteActivity={handleDeleteActivity} />
                     ))}
                     {activities.length === 0 && isLoggedIn && (
-                        <div className="col-span-full text-center py-16 bg-gray-100 rounded-2xl">
-                            <p className="text-lg text-gray-500">
-                                لم تتم إضافة أي أنشطة بعد. ابدأ بإضافة نشاط جديد!
-                            </p>
-                        </div>
+                        <div className="col-span-full text-center py-16 bg-gray-100 rounded-2xl"><p className="text-lg text-gray-500">ابدأ بإضافة نشاط جديد!</p></div>
                     )}
                 </div>
             </div>
@@ -367,10 +358,7 @@ const App: React.FC = () => {
           {videosToDisplay.length > 0 ? (
             videosToDisplay.map((video) => (
               <VideoCard 
-                key={video.id} 
-                video={video} 
-                isAdmin={isLoggedIn}
-                playlists={playlists}
+                key={video.id} video={video} isAdmin={isLoggedIn} playlists={playlists}
                 onAddToPlaylist={handleAddToPlaylist}
                 onDeleteVideo={handleDeleteVideo}
                 onEditVideo={setEditingVideo}
@@ -380,10 +368,7 @@ const App: React.FC = () => {
           ) : (
             <div className="col-span-full text-center py-16">
                 <p className="text-2xl text-gray-500">
-                    {isLoggedIn && selectedPlaylistId === 'all' 
-                        ? 'لم تتم إضافة أي فيديوهات بعد. ابدأ بإضافة فيديو جديد!'
-                        : 'قائمة التشغيل هذه فارغة.'
-                    }
+                    {syncSettings.gistUrl ? 'لم تتم إضافة أي فيديوهات بعد.' : 'الرجاء إعداد المزامنة في لوحة تحكم الأدمن لعرض المحتوى.'}
                 </p>
             </div>
           )}
