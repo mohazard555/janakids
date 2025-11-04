@@ -19,3 +19,10 @@ export interface Activity {
   description: string;
   imageUrl: string;
 }
+
+export interface AdSettings {
+  enabled: boolean;
+  text: string;
+  imageUrl: string | null;
+  link: string;
+}

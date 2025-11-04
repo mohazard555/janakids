@@ -13,7 +13,11 @@ import EditVideoModal from './components/EditVideoModal';
 import AddActivityForm from './components/AddActivityForm';
 import ActivityCard from './components/ActivityCard';
 import Toast, { ToastMessage } from './components/Toast';
-import type { Video, Playlist, Activity } from './types';
+import SearchBar from './components/SearchBar';
+import NotificationBell from './components/NotificationBell';
+import NotificationPanel from './components/NotificationPanel';
+import AdvertisementBanner from './components/AdvertisementBanner';
+import type { Video, Playlist, Activity, AdSettings } from './types';
 
 interface GistSyncSettings {
     gistUrl: string;
@@ -49,7 +53,8 @@ const App: React.FC = () => {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [channelLogo, setChannelLogo] = useState<string | null>(null);
   const [channelDescription, setChannelDescription] = useState('قناة جنى كيدز تقدم لكم أجمل قصص الأطفال التعليمية والترفيهية. انضموا إلينا في مغامرات شيقة وممتعة!');
-  
+  const [adSettings, setAdSettings] = useState<AdSettings>({ enabled: false, text: '', imageUrl: null, link: '' });
+
   // App Control State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -57,6 +62,9 @@ const App: React.FC = () => {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [newVideoIds, setNewVideoIds] = useState<number[]>([]);
+  const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
@@ -85,12 +93,21 @@ const App: React.FC = () => {
         }
         try {
             const localData = JSON.parse(localDataRaw);
-            setVideos(localData.videos ?? []);
+            const loadedVideos = localData.videos ?? [];
+            setVideos(loadedVideos);
             setShorts(localData.shorts ?? []);
             setActivities(localData.activities ?? []);
             setChannelLogo(localData.channelLogo ?? null);
             setPlaylists(localData.playlists ?? []);
             setChannelDescription(localData.channelDescription ?? channelDescription);
+            setAdSettings(localData.adSettings ?? { enabled: false, text: '', imageUrl: null, link: '' });
+            
+            const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
+            const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
+            const allVideoIds = loadedVideos.map((v: Video) => v.id);
+            const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
+            setNewVideoIds(newIds);
+            
             console.log("Data loaded from local storage.");
         } catch(e) {
             console.error("Could not parse local storage data.", e);
@@ -114,7 +131,8 @@ const App: React.FC = () => {
             setChannelLogo(data.channelLogo ?? null);
             setPlaylists(data.playlists ?? []);
             setChannelDescription(data.channelDescription ?? channelDescription);
-            
+            setAdSettings(data.adSettings ?? { enabled: false, text: '', imageUrl: null, link: '' });
+
             // Save the fetched Gist data to local storage for future loads
             localStorage.setItem('janaKidsContent', JSON.stringify(data));
             console.log("Data loaded from Gist and populated local storage.");
@@ -163,6 +181,7 @@ const App: React.FC = () => {
         channelLogo,
         playlists,
         channelDescription,
+        adSettings,
       };
 
       try {
@@ -199,7 +218,7 @@ const App: React.FC = () => {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, isLoading, isLoggedIn, syncSettings]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, adSettings, isLoading, isLoggedIn, syncSettings]);
 
   // Effect for saving content to local storage on any change
   useEffect(() => {
@@ -213,9 +232,10 @@ const App: React.FC = () => {
         channelLogo,
         playlists,
         channelDescription,
+        adSettings,
     };
     localStorage.setItem('janaKidsContent', JSON.stringify(contentToSave));
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, isLoading]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, adSettings, isLoading]);
 
 
   // Effect for saving credentials locally
@@ -260,6 +280,7 @@ const App: React.FC = () => {
       views: 0,
     };
     setVideos(prev => [newVideo, ...prev]);
+    setNewVideoIds(prev => [newVideo.id, ...prev]);
   };
 
   const handleAddShort = (data: { title: string; youtubeUrl: string }) => {
@@ -344,9 +365,28 @@ const App: React.FC = () => {
     setEditingVideo(null);
   };
 
-  const videosToDisplay = selectedPlaylistId === 'all' 
+   const handleAdSettingsChange = (newSettings: AdSettings) => {
+    setAdSettings(newSettings);
+    setToastMessage({ text: 'تم تحديث إعدادات الإعلان بنجاح!', type: 'success' });
+  };
+
+  const handleToggleNotifications = () => {
+      setShowNotificationsPanel(prev => !prev);
+      if (!showNotificationsPanel && newVideoIds.length > 0) {
+          const allCurrentVideoIds = videos.map(v => v.id);
+          localStorage.setItem('janaKidsSeenVideos', JSON.stringify(allCurrentVideoIds));
+          setNewVideoIds([]);
+      }
+  };
+
+  const videosToDisplay = (selectedPlaylistId === 'all' 
     ? videos 
-    : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id));
+    : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id))
+  ).filter(video => 
+    video.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const newVideosList = videos.filter(v => newVideoIds.includes(v.id));
 
   if (isLoading) {
     return (
@@ -377,6 +417,19 @@ const App: React.FC = () => {
         onDescriptionChange={setChannelDescription}
       />
       <main className="container mx-auto px-4 py-10">
+        {adSettings.enabled && adSettings.imageUrl && <AdvertisementBanner ad={adSettings} />}
+
+        <div className="my-8 flex justify-between items-center relative">
+            <SearchBar query={searchQuery} onQueryChange={setSearchQuery} />
+            <NotificationBell count={newVideoIds.length} onClick={handleToggleNotifications} />
+            {showNotificationsPanel && (
+              <NotificationPanel 
+                newVideos={newVideosList}
+                onClose={() => setShowNotificationsPanel(false)}
+              />
+            )}
+        </div>
+        
         {isLoggedIn && (
             <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl shadow-lg mb-12 border border-sky-200">
                 <h2 className="text-4xl font-black text-center text-sky-700 mb-8">لوحة تحكم الأدمن</h2>
@@ -392,6 +445,8 @@ const App: React.FC = () => {
                         currentCredentials={credentials}
                         onSyncSettingsChange={handleSyncSettingsChange}
                         currentSyncSettings={syncSettings}
+                        onAdSettingsChange={handleAdSettingsChange}
+                        currentAdSettings={adSettings}
                     />
                 </div>
             </div>
@@ -431,7 +486,7 @@ const App: React.FC = () => {
           ) : (
             <div className="col-span-full text-center py-16">
                 <p className="text-2xl text-gray-500">
-                    {syncSettings.gistUrl ? 'لم تتم إضافة أي فيديوهات بعد.' : 'الرجاء إعداد المزامنة في لوحة تحكم الأدمن لعرض المحتوى.'}
+                    {searchQuery ? `لا توجد نتائج بحث عن "${searchQuery}"` : 'لم تتم إضافة أي فيديوهات بعد.'}
                 </p>
             </div>
           )}
