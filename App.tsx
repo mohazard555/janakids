@@ -34,31 +34,11 @@ const getYoutubeVideoId = (url: string): string | null => {
 
 const getGistId = (url: string): string | null => {
     if (!url) return null;
-    const match = url.match(/gist\.githubusercontent\.com\/[^\/]+\/([a-f0-9]+)\/raw/);
+    // Matches:
+    // - https://gist.github.com/username/GIST_ID
+    // - https://gist.githubusercontent.com/username/GIST_ID/raw/...
+    const match = url.match(/gist\.github(?:usercontent)?\.com\/[^\/]+\/([a-f0-9]+)/);
     return match ? match[1] : null;
-};
-
-const fullyDecode = (uriComponent: string): string => {
-    let decoded = uriComponent;
-    try {
-        // Keep decoding as long as the string is changing and contains encoded characters.
-        while (decoded.includes('%') && decoded !== decodeURIComponent(decoded)) {
-            decoded = decodeURIComponent(decoded);
-        }
-    } catch (e) {
-        // This might happen if the URI is malformed.
-        // In that case, we return the last valid decoded string.
-        console.error("Malformed URI component during full decode. Returning partially decoded string.", e);
-    }
-    return decoded;
-};
-
-const cleanGistUrl = (url: string): string => {
-    if (!url) return '';
-    // This regex matches and removes the /raw/{commit_hash}/ part of a Gist URL
-    // ensuring the link always points to the latest version.
-    const commitHashRegex = /\/raw\/[a-f0-9]{40}\//;
-    return url.replace(commitHashRegex, '/raw/');
 };
 
 const App: React.FC = () => {
@@ -143,10 +123,25 @@ const App: React.FC = () => {
 
             if (settings.gistUrl) {
                 try {
-                    const fetchUrl = `${settings.gistUrl}?cache_bust=${new Date().getTime()}`;
-                    console.log("Sync is enabled. Fetching latest data from Gist:", fetchUrl);
+                    const gistId = getGistId(settings.gistUrl);
+                    if (!gistId) throw new Error("Could not extract Gist ID from URL.");
+
+                    console.log("Sync is enabled. Fetching Gist metadata for ID:", gistId);
+                    const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`);
+                    if (!metaResponse.ok) throw new Error(`Could not fetch Gist metadata. Status: ${metaResponse.status}`);
+                    
+                    const gistData = await metaResponse.json();
+                    const filenames = Object.keys(gistData.files);
+                    if (filenames.length === 0) throw new Error("Gist is empty.");
+
+                    const filename = filenames.find(f => f.endsWith('.json')) || filenames[0];
+                    const rawUrl = gistData.files[filename].raw_url;
+
+                    const fetchUrl = `${rawUrl}?cache_bust=${new Date().getTime()}`;
+                    console.log("Fetching latest data from raw URL:", fetchUrl);
+
                     const response = await fetch(fetchUrl);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    if (!response.ok) throw new Error(`HTTP error fetching raw content! status: ${response.status}`);
                     const remoteData = await response.json();
 
                     // Set state from Gist data
@@ -245,29 +240,50 @@ const App: React.FC = () => {
 
     syncTimerRef.current = window.setTimeout(async () => {
       const gistId = getGistId(syncSettings.gistUrl);
-      const rawFilename = syncSettings.gistUrl.split('/').pop();
-      const filename = rawFilename ? fullyDecode(rawFilename) : null;
 
-      if (!gistId || !filename) {
-        console.error("Invalid Gist URL format. Cannot extract Gist ID or filename.");
+      if (!gistId) {
+        console.error("Invalid Gist URL format. Cannot extract Gist ID.");
         setToastMessage({ text: 'رابط Gist غير صالح. لا يمكن المزامنة.', type: 'error' });
         return;
       }
       
-      console.log(`Syncing data to Gist file: "${filename}"`);
-
-      const contentToSync = {
-        videos,
-        shorts,
-        activities,
-        channelLogo,
-        playlists,
-        channelDescription,
-        adSettings,
-      };
-
       try {
-        const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+        // Step 1: Fetch Gist metadata to get the correct filename
+        console.log(`Fetching metadata for Gist ID: ${gistId} to determine filename.`);
+        const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
+            headers: {
+                'Authorization': `token ${syncSettings.githubToken}`,
+                'Accept': 'application/vnd.github.v3+json',
+            },
+        });
+
+        if (!metaResponse.ok) {
+            const errorData = await metaResponse.json();
+            throw new Error(`GitHub API Error (getting filename): ${errorData.message}`);
+        }
+
+        const gistData = await metaResponse.json();
+        const filenames = Object.keys(gistData.files);
+
+        if (filenames.length === 0) {
+            throw new Error("Gist is empty and cannot be synced. Please add a data file.");
+        }
+        
+        const filename = filenames.find(f => f.endsWith('.json')) || filenames[0];
+        console.log(`Syncing data to Gist file: "${filename}"`);
+
+        // Step 2: Use the determined filename to PATCH the Gist
+        const contentToSync = {
+          videos,
+          shorts,
+          activities,
+          channelLogo,
+          playlists,
+          channelDescription,
+          adSettings,
+        };
+
+        const patchResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
           method: 'PATCH',
           headers: {
             'Authorization': `token ${syncSettings.githubToken}`,
@@ -282,12 +298,14 @@ const App: React.FC = () => {
           }),
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(`GitHub API Error: ${errorData.message}`);
+        if (!patchResponse.ok) {
+          const errorData = await patchResponse.json();
+          throw new Error(`GitHub API Error (patching content): ${errorData.message}`);
         }
+        
         console.log("Data synced to Gist successfully.");
         setToastMessage({ text: 'تمت المزامنة بنجاح!', type: 'success' });
+
       } catch (error) {
         console.error("Failed to sync data to Gist:", error);
         setToastMessage({ text: `فشل المزامنة: ${error.message}`, type: 'error' });
@@ -328,17 +346,12 @@ const App: React.FC = () => {
   }, [credentials, isLoading]);
 
   const handleSyncSettingsChange = (newSettings: GistSyncSettings) => {
-      const cleanedUrl = cleanGistUrl(newSettings.gistUrl);
-      const settingsToSave = { ...newSettings, gistUrl: cleanedUrl };
+      const settingsToSave = { ...newSettings };
       
       setSyncSettings(settingsToSave);
       localStorage.setItem('janaKidsSyncSettings', JSON.stringify(settingsToSave));
       
-      if (newSettings.gistUrl && newSettings.gistUrl !== cleanedUrl) {
-        alert("ملاحظة: لقد تم تعديل رابط Gist تلقائياً لضمان الإشارة دائماً إلى أحدث محتوى. سيتم الآن إعادة تحميل الصفحة.");
-      } else {
-        alert("تم حفظ إعدادات المزامنة. سيتم إعادة تحميل الصفحة لتطبيق التغييرات.");
-      }
+      alert("تم حفظ إعدادات المزامنة. سيتم إعادة تحميل الصفحة لتطبيق التغييرات.");
       window.location.reload();
   };
 
