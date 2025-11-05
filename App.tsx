@@ -128,33 +128,28 @@ const App: React.FC = () => {
                     const gistId = getGistId(settings.gistUrl);
                     if (!gistId) throw new Error("Could not extract Gist ID from URL.");
 
-                    console.log("Sync is enabled. Fetching Gist metadata for ID:", gistId);
+                    console.log("Sync is enabled. Fetching Gist content for ID:", gistId);
                     const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`);
-                    if (!metaResponse.ok) throw new Error(`Could not fetch Gist metadata. Status: ${metaResponse.status}`);
-                    
+                    if (!metaResponse.ok) throw new Error(`Could not fetch Gist. Status: ${metaResponse.status}`);
+
                     const gistData = await metaResponse.json();
                     const files = gistData.files;
                     const filenames = Object.keys(files);
                     if (filenames.length === 0) throw new Error("Gist is empty.");
 
-                    let filenameToUse: string | null = null;
-                    if (files[CANONICAL_FILENAME]) {
-                        filenameToUse = CANONICAL_FILENAME;
-                        console.log(`Found canonical filename: ${CANONICAL_FILENAME}`);
+                    let fileToUse = files[CANONICAL_FILENAME];
+                    if (!fileToUse) {
+                        const fallbackFilename = filenames.find(f => f.toLowerCase().endsWith('.json')) || filenames[0];
+                        fileToUse = files[fallbackFilename];
+                        console.warn(`Canonical filename not found. Using fallback: ${fallbackFilename}`);
                     } else {
-                        filenameToUse = filenames.find(f => f.toLowerCase().endsWith('.json')) || filenames[0];
-                        console.warn(`Canonical filename not found. Using fallback: ${filenameToUse}`);
+                        console.log(`Found and using canonical filename: ${CANONICAL_FILENAME}`);
                     }
 
-                    if (!filenameToUse) throw new Error("No suitable data file found in Gist.");
+                    if (!fileToUse || !fileToUse.content) throw new Error("No suitable data file with content found in Gist.");
 
-                    const rawUrl = files[filenameToUse].raw_url;
-                    const fetchUrl = `${rawUrl}?cache_bust=${new Date().getTime()}`;
-                    console.log("Fetching latest data from raw URL:", fetchUrl);
+                    const remoteData = JSON.parse(fileToUse.content);
 
-                    const response = await fetch(fetchUrl);
-                    if (!response.ok) throw new Error(`HTTP error fetching raw content! status: ${response.status}`);
-                    const remoteData = await response.json();
 
                     // Set state from Gist data
                     const loadedVideos = remoteData.videos ?? [];
@@ -270,60 +265,42 @@ const App: React.FC = () => {
             adSettings,
         };
 
-        console.log(`Fetching Gist metadata for ID: ${gistId} to perform consolidation sync.`);
+        console.log(`Preparing a definitive sync for Gist ID: ${gistId}.`);
+
+        // 1. Get the list of current files to identify which ones to delete.
         const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
             headers: {
                 'Authorization': `token ${syncSettings.githubToken}`,
                 'Accept': 'application/vnd.github.v3+json',
             },
         });
-
         if (!metaResponse.ok) {
             const errorData = await metaResponse.json();
             throw new Error(`GitHub API Error (getting file list): ${errorData.message}`);
         }
-
         const gistData = await metaResponse.json();
-        const files = gistData.files;
-        const filenames = Object.keys(files);
-        const jsonFiles = filenames.filter(f => f.toLowerCase().endsWith('.json'));
+        const currentFilenames = Object.keys(gistData.files);
 
+        // 2. Prepare the payload for the PATCH request using a "set and purge" strategy.
         const filesToPatch: { [key: string]: any } = {};
 
-        if (jsonFiles.length > 0) {
-            // There are one or more JSON files. We need to consolidate.
-            let sourceFile = jsonFiles.find(f => f === CANONICAL_FILENAME);
-            if (!sourceFile) {
-                // Canonical file doesn't exist, pick the first available JSON file as the source to rename.
-                sourceFile = jsonFiles[0];
-            }
-            console.log(`Chosen source file for consolidation: ${sourceFile}`);
+        // 2a. Set the content for the one, correct, canonical file. This will create or update it.
+        filesToPatch[CANONICAL_FILENAME] = {
+            content: JSON.stringify(contentToSync, null, 2),
+        };
+        console.log(`Staging update for the canonical file: ${CANONICAL_FILENAME}`);
 
-            // Iterate through ALL json files found in the gist.
-            for (const filename of jsonFiles) {
-                if (filename === sourceFile) {
-                    // This is our chosen source. We will update its content and ensure its name is correct.
-                    console.log(`Updating and renaming '${filename}' to '${CANONICAL_FILENAME}'`);
-                    filesToPatch[filename] = {
-                        filename: CANONICAL_FILENAME,
-                        content: JSON.stringify(contentToSync, null, 2)
-                    };
-                } else {
-                    // This is a stray file. Delete it.
-                    console.log(`Marking stray file for deletion: ${filename}`);
-                    filesToPatch[filename] = null;
-                }
+        // 2b. Mark all other existing files for deletion.
+        for (const filename of currentFilenames) {
+            if (filename !== CANONICAL_FILENAME) {
+                filesToPatch[filename] = null; // This tells the API to delete the file.
+                console.log(`Staging deletion for stray file: ${filename}`);
             }
-        } else {
-            // No JSON file exists at all. Create the canonical one from scratch.
-            console.log(`No JSON file found. Creating new file: ${CANONICAL_FILENAME}`);
-            filesToPatch[CANONICAL_FILENAME] = {
-                content: JSON.stringify(contentToSync, null, 2),
-            };
         }
-        
-        console.log("Preparing to PATCH Gist with following changes:", filesToPatch);
 
+        console.log("Preparing to PATCH Gist with the following payload:", filesToPatch);
+
+        // 3. Send the single, definitive PATCH request.
         const patchResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
           method: 'PATCH',
           headers: {
@@ -341,7 +318,7 @@ const App: React.FC = () => {
           throw new Error(`GitHub API Error (patching content): ${errorData.message}`);
         }
         
-        console.log("Data synced and consolidated to Gist successfully.");
+        console.log("Gist sync completed successfully. The Gist is now clean.");
         setToastMessage({ text: 'تمت المزامنة بنجاح!', type: 'success' });
 
       } catch (error) {
