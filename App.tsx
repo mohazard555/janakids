@@ -260,8 +260,17 @@ const App: React.FC = () => {
       }
       
       try {
-        // Step 1: Fetch Gist metadata to find files for cleanup
-        console.log(`Fetching metadata for Gist ID: ${gistId} to determine files for cleanup.`);
+        const contentToSync = {
+            videos,
+            shorts,
+            activities,
+            channelLogo,
+            playlists,
+            channelDescription,
+            adSettings,
+        };
+
+        console.log(`Fetching metadata for Gist ID: ${gistId} to perform sync.`);
         const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
             headers: {
                 'Authorization': `token ${syncSettings.githubToken}`,
@@ -271,38 +280,53 @@ const App: React.FC = () => {
 
         if (!metaResponse.ok) {
             const errorData = await metaResponse.json();
-            throw new Error(`GitHub API Error (getting file list for sync): ${errorData.message}`);
+            throw new Error(`GitHub API Error (getting file list): ${errorData.message}`);
         }
 
         const gistData = await metaResponse.json();
-        const filenames = Object.keys(gistData.files);
+        const files = gistData.files;
+        const filenames = Object.keys(files);
 
-        console.log(`Syncing data to canonical Gist file: "${CANONICAL_FILENAME}"`);
+        const jsonFiles = filenames.filter(f => f.toLowerCase().endsWith('.json'));
 
-        // Step 2: Prepare content and files for PATCH
-        const contentToSync = {
-          videos,
-          shorts,
-          activities,
-          channelLogo,
-          playlists,
-          channelDescription,
-          adSettings,
-        };
+        const filesToPatch: { [key: string]: any } = {};
 
-        const filesToPatch: { [key: string]: { content: string; } | null } = {
-          [CANONICAL_FILENAME]: {
-            content: JSON.stringify(contentToSync, null, 2),
-          },
-        };
+        if (jsonFiles.length === 0) {
+            // Case 1: Gist has no JSON files. Create a new one.
+            console.log("No JSON files found in Gist. Creating canonical file.");
+            filesToPatch[CANONICAL_FILENAME] = {
+                content: JSON.stringify(contentToSync, null, 2),
+            };
+        } else {
+            // Case 2: Gist has one or more JSON files. Consolidate and update.
+            let sourceFilename = '';
 
-        // Find other .json files to delete
-        filenames.forEach(name => {
-            if (name.toLowerCase().endsWith('.json') && name !== CANONICAL_FILENAME) {
-                console.log(`Marking for deletion: ${name}`);
-                filesToPatch[name] = null; // Setting to null deletes the file
+            if (files[CANONICAL_FILENAME]) {
+                sourceFilename = CANONICAL_FILENAME;
+                console.log(`Found canonical file: ${sourceFilename}. Will update it.`);
+            } else {
+                // Find the best alternative to migrate from. Let's just pick the first one.
+                sourceFilename = jsonFiles[0];
+                console.warn(`Canonical file not found. Migrating from source file: ${sourceFilename}`);
             }
-        });
+
+            // Prepare the main update/rename operation.
+            // This will update content and rename to canonical if needed.
+            filesToPatch[sourceFilename] = {
+                filename: CANONICAL_FILENAME,
+                content: JSON.stringify(contentToSync, null, 2),
+            };
+
+            // Mark all other json files for deletion.
+            jsonFiles.forEach(name => {
+                if (name !== sourceFilename) {
+                    console.log(`Marking for deletion: ${name}`);
+                    filesToPatch[name] = null; // Delete
+                }
+            });
+        }
+        
+        console.log("Preparing to PATCH Gist with following changes:", filesToPatch);
 
         const patchResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
           method: 'PATCH',
@@ -311,6 +335,7 @@ const App: React.FC = () => {
             'Accept': 'application/vnd.github.v3+json',
           },
           body: JSON.stringify({
+            description: "Jana Kids Channel Data",
             files: filesToPatch,
           }),
         });
@@ -320,7 +345,7 @@ const App: React.FC = () => {
           throw new Error(`GitHub API Error (patching content): ${errorData.message}`);
         }
         
-        console.log("Data synced to Gist successfully. Cleanup of old files performed if necessary.");
+        console.log("Data synced and consolidated to Gist successfully.");
         setToastMessage({ text: 'تمت المزامنة بنجاح!', type: 'success' });
 
       } catch (error) {
