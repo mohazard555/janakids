@@ -41,79 +41,6 @@ const getGistId = (url: string): string | null => {
     return match ? match[1] : null;
 };
 
-// Reusable function to fetch and parse Gist data
-const fetchGistData = async (settings: GistSyncSettings): Promise<any> => {
-    const gistId = getGistId(settings.gistUrl);
-    if (!gistId) throw new Error("لا يمكن استخلاص Gist ID من الرابط.");
-
-    const headers: HeadersInit = { 'Accept': 'application/vnd.github.v3+json' };
-    if (settings.githubToken) {
-        headers['Authorization'] = `token ${settings.githubToken}`;
-    }
-
-    let metaResponse: Response;
-    try {
-        metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
-    } catch (networkError) {
-        console.error("Network error fetching Gist metadata:", networkError);
-        throw new Error("فشل الاتصال بـ GitHub. يرجى التحقق من اتصال الإنترنت.");
-    }
-
-    if (!metaResponse.ok) {
-        const status = metaResponse.status;
-        if (status === 404) throw new Error('فشل التحميل: لم يتم العثور على Gist. تحقق من الرابط.');
-        if (status === 401 || status === 403) throw new Error('فشل التحميل: خطأ في المصادقة. تحقق من صلاحية GitHub Token.');
-        
-        try {
-            const errorData = await metaResponse.json();
-            throw new Error(`فشل التحميل: ${errorData.message}`);
-        } catch (jsonError) {
-             throw new Error(`فشل التحميل: خطأ غير معروف من الخادم (Status: ${status})`);
-        }
-    }
-
-    const gistData = await metaResponse.json();
-    const files = gistData.files;
-    const filenames = Object.keys(files);
-    if (filenames.length === 0) throw new Error("Gist فارغ. لا توجد ملفات.");
-
-    let fileToUse = files[CANONICAL_FILENAME];
-    if (!fileToUse) {
-        const fallbackFilename = filenames.find(f => f.toLowerCase().endsWith('.json')) || filenames[0];
-        fileToUse = files[fallbackFilename];
-        console.warn(`Canonical filename not found. Using fallback: ${fallbackFilename}`);
-    }
-
-    if (!fileToUse) throw new Error("لم يتم العثور على ملف بيانات مناسب في Gist.");
-    if (!fileToUse.raw_url) {
-        throw new Error("لم يتم العثور على رابط الملف الخام (raw_url) في Gist.");
-    }
-
-    console.log("Fetching content directly from raw URL:", fileToUse.raw_url);
-    
-    let fileContent;
-    try {
-        // We always fetch from raw_url to ensure we get the full, untruncated content.
-        const rawResponse = await fetch(fileToUse.raw_url);
-        if (!rawResponse.ok) {
-            throw new Error(`فشل تحميل المحتوى الكامل للملف (status: ${rawResponse.status})`);
-        }
-        fileContent = await rawResponse.text();
-    } catch (networkError) {
-        console.error("Network error fetching raw Gist content:", networkError);
-        throw new Error("فشل الاتصال بـ GitHub لتحميل الملف. يرجى التحقق من اتصال الإنترنت.");
-    }
-
-    try {
-        return JSON.parse(fileContent);
-    } catch (e) {
-        const error = e as Error;
-        console.error("Error parsing content from raw_url:", error);
-        throw new Error(`فشل تحليل البيانات من Gist. قد يكون الملف تالفًا أو غير مكتمل. (${error.message})`);
-    }
-};
-
-
 const App: React.FC = () => {
   const defaultAdSettings: AdSettings = { 
     ads: [],
@@ -196,50 +123,40 @@ const App: React.FC = () => {
 
   // Effect for initial data loading
   useEffect(() => {
-    const loadInitialData = async () => {
+    const loadInitialData = () => {
         setIsLoading(true);
 
+        // Load settings and credentials from localStorage
         const savedSyncSettingsRaw = localStorage.getItem('janaKidsSyncSettings');
-        const savedCredentials = localStorage.getItem('janaKidsCredentials');
-
-        if (savedCredentials) {
-            setCredentials(JSON.parse(savedCredentials));
-        }
-
-        let dataLoadedFromRemote = false;
-
         if (savedSyncSettingsRaw) {
-            const settings: GistSyncSettings = JSON.parse(savedSyncSettingsRaw);
-            setSyncSettings(settings);
-
-            if (settings.gistUrl) {
-                try {
-                    const remoteData = await fetchGistData(settings);
-                    setDataFromRemote(remoteData);
-                    localStorage.setItem('janaKidsContent', JSON.stringify(remoteData));
-                    console.log("Data loaded from Gist on startup.");
-                    setToastMessage({ text: 'تم تحميل البيانات من السحابة بنجاح.', type: 'success' });
-                    dataLoadedFromRemote = true;
-                } catch (error) {
-                    console.error("Failed to fetch from Gist on startup. Will use cache.", error);
-                    setToastMessage({ text: `${(error as Error).message} سيتم عرض نسخة محفوظة.`, type: 'error' });
-                }
+            try {
+                const settings: GistSyncSettings = JSON.parse(savedSyncSettingsRaw);
+                setSyncSettings(settings);
+            } catch (e) {
+                console.error("Could not parse sync settings from local storage.", e);
+            }
+        }
+        const savedCredentials = localStorage.getItem('janaKidsCredentials');
+        if (savedCredentials) {
+            try {
+                setCredentials(JSON.parse(savedCredentials));
+            } catch (e) {
+                 console.error("Could not parse credentials from local storage.", e);
             }
         }
 
-        if (!dataLoadedFromRemote) {
-            const localDataRaw = localStorage.getItem('janaKidsContent');
-            if (localDataRaw) {
-                try {
-                    console.log("Loading data from local storage cache.");
-                    const localData = JSON.parse(localDataRaw);
-                    setDataFromRemote(localData);
-                } catch (e) {
-                    console.error("Could not parse local storage data.", e);
-                }
-            } else {
-                console.log("No remote or local data found. Starting fresh.");
+        // Always load content from localStorage. This prevents remote data from overwriting local changes.
+        const localDataRaw = localStorage.getItem('janaKidsContent');
+        if (localDataRaw) {
+            try {
+                console.log("Loading data from local storage cache.");
+                const localData = JSON.parse(localDataRaw);
+                setDataFromRemote(localData);
+            } catch (e) {
+                console.error("Could not parse local content data.", e);
             }
+        } else {
+            console.log("No local data found. Starting with a fresh slate.");
         }
 
         setIsLoading(false);
