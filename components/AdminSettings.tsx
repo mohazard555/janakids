@@ -11,7 +11,7 @@ interface AdminSettingsProps {
     currentCredentials: { username: string, password: string };
     onSubscriptionUrlChange: (url: string) => void;
     currentSubscriptionUrl: string;
-    onTestAndLoadFromGist: (settings: GistSyncSettings) => Promise<any>;
+    onConfigureAndSync: (settings: GistSyncSettings) => Promise<any>;
     currentSyncSettings: GistSyncSettings;
     onAdSettingsChange: (settings: AdSettings) => void;
     currentAdSettings: AdSettings;
@@ -22,7 +22,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     currentCredentials,
     onSubscriptionUrlChange,
     currentSubscriptionUrl, 
-    onTestAndLoadFromGist, 
+    onConfigureAndSync, 
     currentSyncSettings,
     onAdSettingsChange,
     currentAdSettings
@@ -88,10 +88,10 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         e.preventDefault();
         setIsTesting(true);
         try {
-            await onTestAndLoadFromGist({ gistUrl, githubToken });
+            await onConfigureAndSync({ gistUrl, githubToken });
         } catch (error) {
            // Error toast is handled in the parent component
-           console.log("Test and load failed, user was notified.");
+           console.log("Configuration and sync failed, user was notified.");
         } finally {
             setIsTesting(false);
         }
@@ -287,7 +287,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                         className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition-colors duration-300 shadow-lg text-md disabled:bg-sky-300 disabled:cursor-not-allowed"
                         disabled={isTesting}
                     >
-                        {isTesting ? '...جاري الاختبار' : 'اختبار الاتصال وتحميل البيانات'}
+                        {isTesting ? '...جاري المزامنة' : 'ربط ومزامنة البيانات'}
                     </button>
                 </form>
             </div>

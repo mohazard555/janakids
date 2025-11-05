@@ -373,24 +373,60 @@ const App: React.FC = () => {
     if(!isLoading) localStorage.setItem('janaKidsCredentials', JSON.stringify(credentials));
   }, [credentials, isLoading]);
 
-  const handleTestAndLoadFromGist = async (settings: GistSyncSettings) => {
-    setIsLoading(true);
+  const handleConfigureAndSync = async (settings: GistSyncSettings) => {
+    setIsSyncing(true);
     try {
-        const remoteData = await fetchGistData(settings);
-        setDataFromRemote(remoteData);
+        const gistId = getGistId(settings.gistUrl);
+        if (!gistId) throw new Error("رابط Gist غير صالح.");
+        if (!settings.githubToken) throw new Error("رمز GitHub مطلوب.");
+
+        const contentToSync = {
+            videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings,
+        };
+
+        const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
+        const AUTH_HEADERS = {
+            'Authorization': `token ${settings.githubToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+        };
+
+        const metaResponse = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
+        if (!metaResponse.ok) {
+            const status = metaResponse.status;
+            if (status === 404) throw new Error('فشل الاتصال: لم يتم العثور على Gist.');
+            if (status === 401 || status === 403) throw new Error('فشل الاتصال: خطأ في المصادقة.');
+            throw new Error(`فشل الاتصال: خطأ من الخادم (Status: ${status})`);
+        }
         
+        const gistData = await metaResponse.json();
+        const currentFilenames = Object.keys(gistData.files);
+
+        const filesToPatch: { [key: string]: any } = {};
+        filesToPatch[CANONICAL_FILENAME] = { content: JSON.stringify(contentToSync, null, 2) };
+        for (const filename of currentFilenames) {
+            if (filename !== CANONICAL_FILENAME) filesToPatch[filename] = null;
+        }
+
+        const patchResponse = await fetch(GIST_API_URL, {
+            method: 'PATCH',
+            headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: "Jana Kids Channel Data", files: filesToPatch }),
+        });
+
+        if (!patchResponse.ok) {
+            const errorData = await patchResponse.json().catch(() => ({ message: 'فشل تحليل استجابة الخطأ' }));
+            throw new Error(`فشل حفظ البيانات في Gist: ${errorData.message}`);
+        }
+
         setSyncSettings(settings);
         localStorage.setItem('janaKidsSyncSettings', JSON.stringify(settings));
-        localStorage.setItem('janaKidsContent', JSON.stringify(remoteData));
         
-        setToastMessage({ text: 'تم الاتصال وتحميل البيانات بنجاح!', type: 'success' });
+        setToastMessage({ text: 'تم ربط ومزامنة البيانات بنجاح!', type: 'success' });
     } catch (error) {
-        console.error("Failed to test/load from Gist:", error);
         setToastMessage({ text: (error as Error).message, type: 'error' });
-        // Re-throw to let the caller know it failed
         throw error;
     } finally {
-        setIsLoading(false);
+        setIsSyncing(false);
     }
   };
 
@@ -579,7 +615,7 @@ const App: React.FC = () => {
                         currentCredentials={credentials}
                         onSubscriptionUrlChange={setSubscriptionUrl}
                         currentSubscriptionUrl={subscriptionUrl}
-                        onTestAndLoadFromGist={handleTestAndLoadFromGist}
+                        onConfigureAndSync={handleConfigureAndSync}
                         currentSyncSettings={syncSettings}
                         onAdSettingsChange={handleAdSettingsChange}
                         currentAdSettings={adSettings}
