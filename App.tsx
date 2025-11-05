@@ -274,7 +274,7 @@ const App: React.FC = () => {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, isLoading, isLoggedIn, syncSettings]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, isLoggedIn, syncSettings]);
 
   // Effect for saving content to local storage on any change
   useEffect(() => {
@@ -345,6 +345,66 @@ const App: React.FC = () => {
     } finally {
         setIsSyncing(false);
     }
+  };
+
+  const handleExportData = () => {
+    try {
+        const dataToExport = {
+            videos,
+            shorts,
+            activities,
+            playlists,
+            channelLogo,
+            channelDescription,
+            subscriptionUrl,
+            adSettings,
+        };
+        const jsonString = JSON.stringify(dataToExport, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'jana_kids_data.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setToastMessage({ text: 'تم تصدير البيانات بنجاح!', type: 'success' });
+    } catch (error) {
+        console.error("Failed to export data:", error);
+        setToastMessage({ text: 'حدث خطأ أثناء تصدير البيانات.', type: 'error' });
+    }
+  };
+
+  const handleImportData = (file: File) => {
+    if (!window.confirm('هل أنت متأكد من استيراد البيانات الجديدة؟ سيتم الكتابة فوق جميع البيانات الحالية.')) {
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const result = event.target?.result;
+            if (typeof result !== 'string') {
+                throw new Error("تعذر قراءة الملف كنص.");
+            }
+            const importedData = JSON.parse(result);
+            
+            if (!importedData || typeof importedData !== 'object' || !Array.isArray(importedData.videos)) {
+                 throw new Error("ملف JSON غير صالح أو لا يحتوي على البنية المتوقعة.");
+            }
+
+            setDataFromRemote(importedData);
+            setToastMessage({ text: 'تم استيراد البيانات بنجاح!', type: 'success' });
+        } catch (error) {
+            console.error("Failed to import data:", error);
+            setToastMessage({ text: (error as Error).message, type: 'error' });
+        }
+    };
+    reader.onerror = () => {
+        setToastMessage({ text: 'فشل قراءة الملف.', type: 'error' });
+    };
+    reader.readAsText(file, 'UTF-8');
   };
 
   const handleLogoUpload = (file: File) => {
@@ -536,6 +596,8 @@ const App: React.FC = () => {
                         currentSyncSettings={syncSettings}
                         onAdSettingsChange={handleAdSettingsChange}
                         currentAdSettings={adSettings}
+                        onExportData={handleExportData}
+                        onImportData={handleImportData}
                     />
                 </div>
             </div>

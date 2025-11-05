@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { AdSettings, Ad } from '../types';
 
 interface GistSyncSettings {
@@ -15,6 +15,8 @@ interface AdminSettingsProps {
     currentSyncSettings: GistSyncSettings;
     onAdSettingsChange: (settings: AdSettings) => void;
     currentAdSettings: AdSettings;
+    onExportData: () => void;
+    onImportData: (file: File) => void;
 }
 
 const AdminSettings: React.FC<AdminSettingsProps> = ({ 
@@ -25,7 +27,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     onConfigureAndSync, 
     currentSyncSettings,
     onAdSettingsChange,
-    currentAdSettings
+    currentAdSettings,
+    onExportData,
+    onImportData
 }) => {
     // General Settings State
     const [username, setUsername] = useState(currentCredentials.username);
@@ -49,6 +53,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     const [adLink, setAdLink] = useState('');
     const [adImageFile, setAdImageFile] = useState<File | null>(null);
     const [adImagePreview, setAdImagePreview] = useState<string | null>(null);
+
+    const importFileInputRef = useRef<HTMLInputElement>(null);
+
 
     useEffect(() => {
         setGistUrl(currentSyncSettings.gistUrl || '');
@@ -164,6 +171,18 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         }
     };
 
+    const handleImportClick = () => {
+        importFileInputRef.current?.click();
+    };
+
+    const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            onImportData(file);
+        }
+        event.target.value = ''; // Reset to allow re-importing same file
+    };
+
 
     return (
         <div className="bg-white p-6 rounded-2xl shadow-md h-full flex flex-col justify-between">
@@ -266,6 +285,33 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                 </form>
             </div>
             
+            <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200">
+                <h3 className="text-xl font-bold text-center text-indigo-700 mb-4">إدارة البيانات المحلية</h3>
+                <div className="flex space-x-4 rtl:space-x-reverse">
+                    <input
+                        type="file"
+                        ref={importFileInputRef}
+                        className="hidden"
+                        accept=".json"
+                        onChange={handleFileImport}
+                    />
+                    <button 
+                        type="button" 
+                        onClick={handleImportClick}
+                        className="w-full bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-600 transition-colors duration-300 shadow-lg text-md"
+                    >
+                        استيراد JSON
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={onExportData}
+                        className="w-full bg-teal-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-600 transition-colors duration-300 shadow-lg text-md"
+                    >
+                        تصدير JSON
+                    </button>
+                </div>
+            </div>
+
             <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200">
                 <h3 className="text-xl font-bold text-center text-sky-700 mb-3">تمكين المزامنة عبر الإنترنت</h3>
                 <ol className="list-decimal list-inside text-gray-600 text-sm mb-4 space-y-1 text-right">
