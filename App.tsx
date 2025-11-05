@@ -246,15 +246,14 @@ const App: React.FC = () => {
     }
 
     syncTimerRef.current = window.setTimeout(async () => {
-      const gistId = getGistId(syncSettings.gistUrl);
-
-      if (!gistId) {
-        console.error("Invalid Gist URL format. Cannot extract Gist ID.");
-        setToastMessage({ text: 'رابط Gist غير صالح. لا يمكن المزامنة.', type: 'error' });
-        return;
-      }
-      
       try {
+        const gistId = getGistId(syncSettings.gistUrl);
+        if (!gistId) {
+          throw new Error("رابط Gist غير صالح. لا يمكن المزامنة.");
+        }
+
+        console.log(`Starting automatic sync for Gist ID: ${gistId}.`);
+        
         const contentToSync = {
             videos,
             shorts,
@@ -265,48 +264,43 @@ const App: React.FC = () => {
             adSettings,
         };
 
-        console.log(`Preparing a definitive sync for Gist ID: ${gistId}.`);
+        const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
+        const AUTH_HEADERS = {
+            'Authorization': `token ${syncSettings.githubToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+        };
 
-        // 1. Get the list of current files to identify which ones to delete.
-        const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
-            headers: {
-                'Authorization': `token ${syncSettings.githubToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-            },
-        });
+        // Step 1: Get current Gist state to ensure we can connect before patching.
+        // This also gets the list of files to clean up.
+        const metaResponse = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
+
         if (!metaResponse.ok) {
-            const errorData = await metaResponse.json();
-            throw new Error(`GitHub API Error (getting file list): ${errorData.message}`);
+            const status = metaResponse.status;
+            if (status === 404) throw new Error('فشل جلب Gist: لم يتم العثور عليه. يرجى التحقق من الرابط.');
+            if (status === 401 || status === 403) throw new Error('فشل جلب Gist: خطأ في المصادقة. يرجى التحقق من صلاحيات GitHub Token.');
+            const errorData = await metaResponse.json().catch(() => ({ message: 'فشل تحليل استجابة الخطأ' }));
+            throw new Error(`فشل جلب Gist: ${errorData.message}`);
         }
+        
         const gistData = await metaResponse.json();
         const currentFilenames = Object.keys(gistData.files);
 
-        // 2. Prepare the payload for the PATCH request using a "set and purge" strategy.
+        // Step 2: Prepare the PATCH payload with a "set and purge" strategy.
         const filesToPatch: { [key: string]: any } = {};
-
-        // 2a. Set the content for the one, correct, canonical file. This will create or update it.
         filesToPatch[CANONICAL_FILENAME] = {
             content: JSON.stringify(contentToSync, null, 2),
         };
-        console.log(`Staging update for the canonical file: ${CANONICAL_FILENAME}`);
-
-        // 2b. Mark all other existing files for deletion.
         for (const filename of currentFilenames) {
             if (filename !== CANONICAL_FILENAME) {
                 filesToPatch[filename] = null; // This tells the API to delete the file.
-                console.log(`Staging deletion for stray file: ${filename}`);
             }
         }
-
-        console.log("Preparing to PATCH Gist with the following payload:", filesToPatch);
-
-        // 3. Send the single, definitive PATCH request.
-        const patchResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
+        
+        // Step 3: Send the definitive PATCH request.
+        const patchResponse = await fetch(GIST_API_URL, {
           method: 'PATCH',
-          headers: {
-            'Authorization': `token ${syncSettings.githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-          },
+          headers: AUTH_HEADERS,
           body: JSON.stringify({
             description: "Jana Kids Channel Data",
             files: filesToPatch,
@@ -314,16 +308,19 @@ const App: React.FC = () => {
         });
 
         if (!patchResponse.ok) {
-          const errorData = await patchResponse.json();
-          throw new Error(`GitHub API Error (patching content): ${errorData.message}`);
+          const status = patchResponse.status;
+          if (status === 404) throw new Error('فشل الحفظ: لم يتم العثور على Gist. يرجى التحقق من الرابط.');
+          if (status === 401 || status === 403) throw new Error('فشل الحفظ: خطأ في المصادقة. يرجى التحقق من صلاحيات GitHub Token.');
+          const errorData = await patchResponse.json().catch(() => ({ message: 'فشل تحليل استجابة الخطأ' }));
+          throw new Error(`فشل الحفظ: ${errorData.message}`);
         }
         
-        console.log("Gist sync completed successfully. The Gist is now clean.");
+        console.log("Gist sync completed successfully.");
         setToastMessage({ text: 'تمت المزامنة بنجاح!', type: 'success' });
 
       } catch (error) {
         console.error("Failed to sync data to Gist:", error);
-        setToastMessage({ text: `فشل المزامنة: ${error.message}`, type: 'error' });
+        setToastMessage({ text: error.message, type: 'error' });
       }
 
     }, 2000); // 2-second debounce
