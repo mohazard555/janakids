@@ -36,12 +36,58 @@ const getYoutubeVideoId = (url: string): string | null => {
 
 const getGistId = (url: string): string | null => {
     if (!url) return null;
-    // Matches:
-    // - https://gist.github.com/username/GIST_ID
-    // - https://gist.githubusercontent.com/username/GIST_ID/raw/...
     const match = url.match(/gist\.github(?:usercontent)?\.com\/[^\/]+\/([a-f0-9]+)/);
     return match ? match[1] : null;
 };
+
+// Reusable function to fetch and parse Gist data
+const fetchGistData = async (settings: GistSyncSettings): Promise<any> => {
+    const gistId = getGistId(settings.gistUrl);
+    if (!gistId) throw new Error("لا يمكن استخلاص Gist ID من الرابط.");
+
+    const headers: HeadersInit = { 'Accept': 'application/vnd.github.v3+json' };
+    if (settings.githubToken) {
+        headers['Authorization'] = `token ${settings.githubToken}`;
+    }
+
+    let metaResponse: Response;
+    try {
+        metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
+    } catch (networkError) {
+        console.error("Network error fetching Gist:", networkError);
+        throw new Error("فشل الاتصال بـ GitHub. يرجى التحقق من اتصال الإنترنت.");
+    }
+
+    if (!metaResponse.ok) {
+        const status = metaResponse.status;
+        if (status === 404) throw new Error('فشل التحميل: لم يتم العثور على Gist. تحقق من الرابط.');
+        if (status === 401 || status === 403) throw new Error('فشل التحميل: خطأ في المصادقة. تحقق من صلاحية GitHub Token.');
+        
+        try {
+            const errorData = await metaResponse.json();
+            throw new Error(`فشل التحميل: ${errorData.message}`);
+        } catch (jsonError) {
+             throw new Error(`فشل التحميل: خطأ غير معروف من الخادم (Status: ${status})`);
+        }
+    }
+
+    const gistData = await metaResponse.json();
+    const files = gistData.files;
+    const filenames = Object.keys(files);
+    if (filenames.length === 0) throw new Error("Gist فارغ. لا توجد ملفات.");
+
+    let fileToUse = files[CANONICAL_FILENAME];
+    if (!fileToUse) {
+        const fallbackFilename = filenames.find(f => f.toLowerCase().endsWith('.json')) || filenames[0];
+        fileToUse = files[fallbackFilename];
+        console.warn(`Canonical filename not found. Using fallback: ${fallbackFilename}`);
+    }
+
+    if (!fileToUse || typeof fileToUse.content !== 'string') throw new Error("لم يتم العثور على ملف بيانات مناسب في Gist.");
+
+    return JSON.parse(fileToUse.content);
+};
+
 
 const App: React.FC = () => {
   const defaultAdSettings: AdSettings = { 
@@ -73,7 +119,6 @@ const App: React.FC = () => {
   const [isAdVisible, setIsAdVisible] = useState(true);
   const [currentAd, setCurrentAd] = useState<Ad | null>(null);
 
-
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
   const [syncSettings, setSyncSettings] = useState<GistSyncSettings>({ gistUrl: '', githubToken: '' });
@@ -99,10 +144,27 @@ const App: React.FC = () => {
         }
         return newSettings;
     }
-    // It's the new structure or default
     return { ...defaultAdSettings, ...loadedAdSettings };
   };
 
+  const setDataFromRemote = (data: any) => {
+    const loadedVideos = data.videos ?? [];
+    setVideos(loadedVideos);
+    setShorts(data.shorts ?? []);
+    setActivities(data.activities ?? []);
+    setChannelLogo(data.channelLogo ?? null);
+    setPlaylists(data.playlists ?? []);
+    setChannelDescription(data.channelDescription ?? channelDescription);
+
+    const migratedAdSettings = migrateAdSettings(data.adSettings);
+    setAdSettings(migratedAdSettings);
+
+    const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
+    const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
+    const allVideoIds = loadedVideos.map((v: Video) => v.id);
+    const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
+    setNewVideoIds(newIds);
+  };
 
   // Effect for initial data loading
   useEffect(() => {
@@ -118,110 +180,32 @@ const App: React.FC = () => {
 
         let dataLoadedFromRemote = false;
 
-        // --- Gist-First Approach ---
         if (savedSyncSettingsRaw) {
             const settings: GistSyncSettings = JSON.parse(savedSyncSettingsRaw);
-            setSyncSettings(settings); // Set settings in state regardless of fetch success
+            setSyncSettings(settings);
 
             if (settings.gistUrl) {
                 try {
-                    const gistId = getGistId(settings.gistUrl);
-                    if (!gistId) throw new Error("لا يمكن استخلاص Gist ID من الرابط.");
-
-                    console.log("Sync is enabled. Fetching Gist content for ID:", gistId);
-
-                    const headers: HeadersInit = {
-                        'Accept': 'application/vnd.github.v3+json',
-                    };
-                    if (settings.githubToken) {
-                        headers['Authorization'] = `token ${settings.githubToken}`;
-                    }
-
-                    const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
-
-                    if (!metaResponse.ok) {
-                        const status = metaResponse.status;
-                        if (status === 404) throw new Error('فشل التحميل: لم يتم العثور على Gist. تحقق من الرابط.');
-                        if (status === 401 || status === 403) throw new Error('فشل التحميل: خطأ في المصادقة. تحقق من صلاحية GitHub Token.');
-                        const errorData = await metaResponse.json().catch(() => ({ message: 'فشل تحليل استجابة الخطأ' }));
-                        throw new Error(`فشل التحميل: ${errorData.message}`);
-                    }
-
-                    const gistData = await metaResponse.json();
-                    const files = gistData.files;
-                    const filenames = Object.keys(files);
-                    if (filenames.length === 0) throw new Error("Gist is empty.");
-
-                    let fileToUse = files[CANONICAL_FILENAME];
-                    if (!fileToUse) {
-                        const fallbackFilename = filenames.find(f => f.toLowerCase().endsWith('.json')) || filenames[0];
-                        fileToUse = files[fallbackFilename];
-                        console.warn(`Canonical filename not found. Using fallback: ${fallbackFilename}`);
-                    } else {
-                        console.log(`Found and using canonical filename: ${CANONICAL_FILENAME}`);
-                    }
-
-                    if (!fileToUse || !fileToUse.content) throw new Error("No suitable data file with content found in Gist.");
-
-                    const remoteData = JSON.parse(fileToUse.content);
-
-                    // Set state from Gist data
-                    const loadedVideos = remoteData.videos ?? [];
-                    setVideos(loadedVideos);
-                    setShorts(remoteData.shorts ?? []);
-                    setActivities(remoteData.activities ?? []);
-                    setChannelLogo(remoteData.channelLogo ?? null);
-                    setPlaylists(remoteData.playlists ?? []);
-                    setChannelDescription(remoteData.channelDescription ?? channelDescription);
-
-                    const migratedAdSettings = migrateAdSettings(remoteData.adSettings);
-                    setAdSettings(migratedAdSettings);
-
-                    // Update local cache with fresh data from Gist
+                    const remoteData = await fetchGistData(settings);
+                    setDataFromRemote(remoteData);
                     localStorage.setItem('janaKidsContent', JSON.stringify(remoteData));
-                    console.log("Data loaded from Gist. Local cache updated.");
+                    console.log("Data loaded from Gist on startup.");
                     setToastMessage({ text: 'تم تحميل البيانات من السحابة بنجاح.', type: 'success' });
-
-
-                    const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
-                    const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
-                    const allVideoIds = loadedVideos.map((v: Video) => v.id);
-                    const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
-                    setNewVideoIds(newIds);
-
                     dataLoadedFromRemote = true;
-
                 } catch (error) {
-                    console.error("Failed to fetch from Gist. Will attempt to load from local cache.", error);
+                    console.error("Failed to fetch from Gist on startup. Will use cache.", error);
                     setToastMessage({ text: `${error.message} سيتم عرض نسخة محفوظة.`, type: 'error' });
                 }
             }
         }
 
-        // --- Fallback to Local Storage ---
         if (!dataLoadedFromRemote) {
             const localDataRaw = localStorage.getItem('janaKidsContent');
             if (localDataRaw) {
                 try {
                     console.log("Loading data from local storage cache.");
                     const localData = JSON.parse(localDataRaw);
-                    const loadedVideos = localData.videos ?? [];
-                    setVideos(loadedVideos);
-                    setShorts(localData.shorts ?? []);
-                    setActivities(localData.activities ?? []);
-                    setChannelLogo(localData.channelLogo ?? null);
-                    setPlaylists(localData.playlists ?? []);
-                    setChannelDescription(localData.channelDescription ?? channelDescription);
-
-                    const migratedAdSettings = migrateAdSettings(localData.adSettings);
-                    setAdSettings(migratedAdSettings);
-
-                    const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
-                    const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
-                    const allVideoIds = loadedVideos.map((v: Video) => v.id);
-                    const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
-                    setNewVideoIds(newIds);
-
+                    setDataFromRemote(localData);
                 } catch (e) {
                     console.error("Could not parse local storage data.", e);
                 }
@@ -286,11 +270,8 @@ const App: React.FC = () => {
             'Accept': 'application/vnd.github.v3+json',
             'Content-Type': 'application/json',
         };
-
-        // Step 1: Get current Gist state to ensure we can connect before patching.
-        // This also gets the list of files to clean up.
-        const metaResponse = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
-
+        
+        const metaResponse = await fetch(GIST_API_URL, { headers: { 'Authorization': `token ${syncSettings.githubToken}`, 'Accept': 'application/vnd.github.v3+json' } });
         if (!metaResponse.ok) {
             const status = metaResponse.status;
             if (status === 404) throw new Error('فشل جلب Gist: لم يتم العثور عليه. يرجى التحقق من الرابط.');
@@ -302,18 +283,16 @@ const App: React.FC = () => {
         const gistData = await metaResponse.json();
         const currentFilenames = Object.keys(gistData.files);
 
-        // Step 2: Prepare the PATCH payload with a "set and purge" strategy.
         const filesToPatch: { [key: string]: any } = {};
         filesToPatch[CANONICAL_FILENAME] = {
             content: JSON.stringify(contentToSync, null, 2),
         };
         for (const filename of currentFilenames) {
             if (filename !== CANONICAL_FILENAME) {
-                filesToPatch[filename] = null; // This tells the API to delete the file.
+                filesToPatch[filename] = null;
             }
         }
         
-        // Step 3: Send the definitive PATCH request.
         const patchResponse = await fetch(GIST_API_URL, {
           method: 'PATCH',
           headers: AUTH_HEADERS,
@@ -339,7 +318,7 @@ const App: React.FC = () => {
         setToastMessage({ text: error.message, type: 'error' });
       }
 
-    }, 2000); // 2-second debounce
+    }, 2000);
 
     return () => {
       if (syncTimerRef.current) {
@@ -350,37 +329,37 @@ const App: React.FC = () => {
 
   // Effect for saving content to local storage on any change
   useEffect(() => {
-    if (isLoading) {
-      return; // Don't save anything during the initial load
-    }
+    if (isLoading) return;
     const contentToSave = {
-        videos,
-        shorts,
-        activities,
-        channelLogo,
-        playlists,
-        channelDescription,
-        adSettings,
+        videos, shorts, activities, channelLogo, playlists, channelDescription, adSettings,
     };
     localStorage.setItem('janaKidsContent', JSON.stringify(contentToSave));
   }, [videos, shorts, activities, channelLogo, playlists, channelDescription, adSettings, isLoading]);
 
 
-  // Effect for saving credentials locally
   useEffect(() => {
-    if(!isLoading) {
-        localStorage.setItem('janaKidsCredentials', JSON.stringify(credentials));
-    }
+    if(!isLoading) localStorage.setItem('janaKidsCredentials', JSON.stringify(credentials));
   }, [credentials, isLoading]);
 
-  const handleSyncSettingsChange = (newSettings: GistSyncSettings) => {
-      const settingsToSave = { ...newSettings };
-      
-      setSyncSettings(settingsToSave);
-      localStorage.setItem('janaKidsSyncSettings', JSON.stringify(settingsToSave));
-      
-      alert("تم حفظ إعدادات المزامنة. سيتم إعادة تحميل الصفحة لتطبيق التغييرات.");
-      window.location.reload();
+  const handleTestAndLoadFromGist = async (settings: GistSyncSettings) => {
+    setIsLoading(true);
+    try {
+        const remoteData = await fetchGistData(settings);
+        setDataFromRemote(remoteData);
+        
+        setSyncSettings(settings);
+        localStorage.setItem('janaKidsSyncSettings', JSON.stringify(settings));
+        localStorage.setItem('janaKidsContent', JSON.stringify(remoteData));
+        
+        setToastMessage({ text: 'تم الاتصال وتحميل البيانات بنجاح!', type: 'success' });
+    } catch (error) {
+        console.error("Failed to test/load from Gist:", error);
+        setToastMessage({ text: error.message, type: 'error' });
+        // Re-throw to let the caller know it failed
+        throw error;
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const handleLogoUpload = (file: File) => {
@@ -564,7 +543,7 @@ const App: React.FC = () => {
                     <AdminSettings 
                         onCredentialsChange={setCredentials} 
                         currentCredentials={credentials}
-                        onSyncSettingsChange={handleSyncSettingsChange}
+                        onTestAndLoadFromGist={handleTestAndLoadFromGist}
                         currentSyncSettings={syncSettings}
                         onAdSettingsChange={handleAdSettingsChange}
                         currentAdSettings={adSettings}

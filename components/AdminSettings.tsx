@@ -9,7 +9,7 @@ interface GistSyncSettings {
 interface AdminSettingsProps {
     onCredentialsChange: (credentials: { username: string, password: string }) => void;
     currentCredentials: { username: string, password: string };
-    onSyncSettingsChange: (settings: GistSyncSettings) => void;
+    onTestAndLoadFromGist: (settings: GistSyncSettings) => Promise<any>;
     currentSyncSettings: GistSyncSettings;
     onAdSettingsChange: (settings: AdSettings) => void;
     currentAdSettings: AdSettings;
@@ -18,7 +18,7 @@ interface AdminSettingsProps {
 const AdminSettings: React.FC<AdminSettingsProps> = ({ 
     onCredentialsChange, 
     currentCredentials, 
-    onSyncSettingsChange, 
+    onTestAndLoadFromGist, 
     currentSyncSettings,
     onAdSettingsChange,
     currentAdSettings
@@ -30,6 +30,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     // Sync State
     const [gistUrl, setGistUrl] = useState('');
     const [githubToken, setGithubToken] = useState('');
+    const [isTesting, setIsTesting] = useState(false);
 
     // Ads Management State
     const [localAds, setLocalAds] = useState<Ad[]>([]);
@@ -76,9 +77,17 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         alert('تم تحديث معلومات تسجيل الدخول بنجاح!');
     };
 
-    const handleSyncSubmit = (e: React.FormEvent) => {
+    const handleSyncSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        onSyncSettingsChange({ gistUrl, githubToken });
+        setIsTesting(true);
+        try {
+            await onTestAndLoadFromGist({ gistUrl, githubToken });
+        } catch (error) {
+           // Error toast is handled in the parent component
+           console.log("Test and load failed, user was notified.");
+        } finally {
+            setIsTesting(false);
+        }
     };
 
     const handleSaveAllAdSettings = (e: React.FormEvent) => {
@@ -123,11 +132,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
 
         const processAd = (imageUrl: string | null) => {
             if (editingAd) {
-                // Update existing ad
                 const updatedAd = { ...editingAd, text: adText, link: adLink, imageUrl: imageUrl };
                 setLocalAds(prev => prev.map(ad => ad.id === editingAd.id ? updatedAd : ad));
             } else {
-                // Add new ad
                 const newAd: Ad = {
                     id: Date.now(),
                     text: adText,
@@ -258,8 +265,12 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                         <label htmlFor="github-token" className="block text-right text-gray-700 font-semibold mb-1">GitHub Personal Access Token</label>
                         <input id="github-token" type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" autoComplete="new-password" />
                     </div>
-                    <button type="submit" className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition-colors duration-300 shadow-lg text-md">
-                        حفظ إعدادات المزامنة
+                    <button 
+                        type="submit" 
+                        className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition-colors duration-300 shadow-lg text-md disabled:bg-sky-300 disabled:cursor-not-allowed"
+                        disabled={isTesting}
+                    >
+                        {isTesting ? '...جاري الاختبار' : 'اختبار الاتصال وتحميل البيانات'}
                     </button>
                 </form>
             </div>
