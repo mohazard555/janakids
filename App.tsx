@@ -18,6 +18,7 @@ import NotificationBell from './components/NotificationBell';
 import NotificationPanel from './components/NotificationPanel';
 import AdvertisementBanner from './components/AdvertisementBanner';
 import AdvertiserCta from './components/AdvertiserCta';
+import SyncIndicator from './components/SyncIndicator';
 import type { Video, Playlist, Activity, AdSettings, Ad } from './types';
 
 interface GistSyncSettings {
@@ -113,6 +114,7 @@ const App: React.FC = () => {
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [newVideoIds, setNewVideoIds] = useState<number[]>([]);
@@ -248,6 +250,7 @@ const App: React.FC = () => {
     }
 
     syncTimerRef.current = window.setTimeout(async () => {
+      setIsSyncing(true);
       try {
         const gistId = getGistId(syncSettings.gistUrl);
         if (!gistId) {
@@ -319,6 +322,8 @@ const App: React.FC = () => {
       } catch (error) {
         console.error("Failed to sync data to Gist:", error);
         setToastMessage({ text: error.message, type: 'error' });
+      } finally {
+        setIsSyncing(false);
       }
 
     }, 2000);
@@ -608,6 +613,7 @@ const App: React.FC = () => {
       
       <Footer />
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+      {isLoggedIn && <SyncIndicator isSyncing={isSyncing} />}
     </div>
   );
 };
