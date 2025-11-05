@@ -126,11 +126,26 @@ const App: React.FC = () => {
             if (settings.gistUrl) {
                 try {
                     const gistId = getGistId(settings.gistUrl);
-                    if (!gistId) throw new Error("Could not extract Gist ID from URL.");
+                    if (!gistId) throw new Error("لا يمكن استخلاص Gist ID من الرابط.");
 
                     console.log("Sync is enabled. Fetching Gist content for ID:", gistId);
-                    const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`);
-                    if (!metaResponse.ok) throw new Error(`Could not fetch Gist. Status: ${metaResponse.status}`);
+
+                    const headers: HeadersInit = {
+                        'Accept': 'application/vnd.github.v3+json',
+                    };
+                    if (settings.githubToken) {
+                        headers['Authorization'] = `token ${settings.githubToken}`;
+                    }
+
+                    const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
+
+                    if (!metaResponse.ok) {
+                        const status = metaResponse.status;
+                        if (status === 404) throw new Error('فشل التحميل: لم يتم العثور على Gist. تحقق من الرابط.');
+                        if (status === 401 || status === 403) throw new Error('فشل التحميل: خطأ في المصادقة. تحقق من صلاحية GitHub Token.');
+                        const errorData = await metaResponse.json().catch(() => ({ message: 'فشل تحليل استجابة الخطأ' }));
+                        throw new Error(`فشل التحميل: ${errorData.message}`);
+                    }
 
                     const gistData = await metaResponse.json();
                     const files = gistData.files;
@@ -150,7 +165,6 @@ const App: React.FC = () => {
 
                     const remoteData = JSON.parse(fileToUse.content);
 
-
                     // Set state from Gist data
                     const loadedVideos = remoteData.videos ?? [];
                     setVideos(loadedVideos);
@@ -166,6 +180,8 @@ const App: React.FC = () => {
                     // Update local cache with fresh data from Gist
                     localStorage.setItem('janaKidsContent', JSON.stringify(remoteData));
                     console.log("Data loaded from Gist. Local cache updated.");
+                    setToastMessage({ text: 'تم تحميل البيانات من السحابة بنجاح.', type: 'success' });
+
 
                     const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
                     const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
@@ -177,7 +193,7 @@ const App: React.FC = () => {
 
                 } catch (error) {
                     console.error("Failed to fetch from Gist. Will attempt to load from local cache.", error);
-                    setToastMessage({ text: 'فشل الإتصال، سيتم عرض نسخة محفوظة.', type: 'error' });
+                    setToastMessage({ text: `${error.message} سيتم عرض نسخة محفوظة.`, type: 'error' });
                 }
             }
         }
