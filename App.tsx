@@ -121,68 +121,73 @@ const App: React.FC = () => {
     setNewVideoIds(newIds);
   };
 
-  // Effect for initial data loading from Gist, with localStorage fallback.
+  // Effect for initial data loading.
+  // This is the source of truth for all users. It prioritizes fetching the latest
+  // data from the configured Gist URL, falling back to localStorage only if the network fails.
   useEffect(() => {
-    const loadData = async () => {
-        setIsLoading(true);
+    const loadInitialData = async () => {
+      setIsLoading(true);
 
-        // Load settings and credentials from localStorage first
-        const savedSyncSettingsRaw = localStorage.getItem('janaKidsSyncSettings');
-        let settings: GistSyncSettings | null = null;
-        if (savedSyncSettingsRaw) {
-            try {
-                settings = JSON.parse(savedSyncSettingsRaw);
-                setSyncSettings(settings!);
-            } catch (e) { console.error("Could not parse sync settings.", e); }
-        }
-        const savedCredentials = localStorage.getItem('janaKidsCredentials');
-        if (savedCredentials) {
-            try {
-                setCredentials(JSON.parse(savedCredentials));
-            } catch (e) { console.error("Could not parse credentials.", e); }
-        }
+      // Step 1: Load configuration from localStorage. This is needed to find the Gist URL.
+      const savedSyncSettingsRaw = localStorage.getItem('janaKidsSyncSettings');
+      const localSettings = savedSyncSettingsRaw ? JSON.parse(savedSyncSettingsRaw) : null;
+      if (localSettings) {
+        setSyncSettings(localSettings);
+      }
+      
+      const savedCredentials = localStorage.getItem('janaKidsCredentials');
+      if (savedCredentials) {
+        try {
+          setCredentials(JSON.parse(savedCredentials));
+        } catch (e) { console.error("Could not parse credentials.", e); }
+      }
 
-        let dataLoaded = false;
-        // Priority 1: Fetch from remote Gist if URL is configured
-        if (settings && settings.gistUrl) {
+      const gistUrl = localSettings?.gistUrl;
+
+      // Step 2: Main data loading logic. Prioritize remote Gist for all users.
+      if (gistUrl) {
+        try {
+          // Use a cache-busting parameter to ensure the latest version is fetched.
+          const cacheBustedUrl = `${gistUrl}?t=${Date.now()}`;
+          console.log(`Fetching initial data from: ${cacheBustedUrl}`);
+          const response = await fetch(cacheBustedUrl, { cache: 'no-store' });
+          
+          if (!response.ok) {
+            throw new Error(`Network response was not ok: ${response.statusText}`);
+          }
+          
+          const data = await response.json();
+          console.log("Successfully fetched and applied data from Gist.", data);
+          setDataFromRemote(data);
+          // Update the local cache with the fresh data from the server.
+          localStorage.setItem('janaKidsContent', JSON.stringify(data));
+        } catch (error) {
+          console.error("Failed to fetch from Gist, falling back to localStorage.", error);
+          setToastMessage({ text: 'فشل تحميل البيانات، عرض نسخة محفوظة.', type: 'error' });
+          
+          // Fallback to localStorage cache ONLY if Gist fetch fails.
+          const localDataRaw = localStorage.getItem('janaKidsContent');
+          if (localDataRaw) {
             try {
-                console.log(`Fetching initial data from Gist: ${settings.gistUrl}`);
-                const response = await fetch(settings.gistUrl, { cache: 'no-store' }); // Disable caching to get latest version
-                if (!response.ok) {
-                    throw new Error(`Gist fetch failed with status: ${response.status}`);
-                }
-                const data = await response.json();
-                console.log("Successfully loaded data from Gist.");
-                setDataFromRemote(data);
-                localStorage.setItem('janaKidsContent', JSON.stringify(data)); // Update local cache with fresh data
-                dataLoaded = true;
-            } catch (error) {
-                console.error("Could not load from Gist, will try local storage fallback.", error);
-                setToastMessage({ text: 'فشل تحميل البيانات من الإنترنت، سيتم عرض نسخة محفوظة.', type: 'error' });
+              console.log("Applying data from local storage cache.");
+              setDataFromRemote(JSON.parse(localDataRaw));
+            } catch (e) {
+              console.error("Could not parse local fallback data.", e);
             }
+          }
         }
-
-        // Priority 2: Fallback to localStorage if Gist fetch failed or wasn't configured
-        if (!dataLoaded) {
-            const localDataRaw = localStorage.getItem('janaKidsContent');
-            if (localDataRaw) {
-                try {
-                    console.log("Loading data from local storage cache.");
-                    const localData = JSON.parse(localDataRaw);
-                    setDataFromRemote(localData);
-                } catch (e) {
-                    console.error("Could not parse local content data.", e);
-                }
-            } else {
-                console.log("No remote or local data found. Starting with a fresh slate.");
-            }
-        }
-
-        setIsLoading(false);
+      } else {
+        // If no Gist URL is configured, this means it's a fresh site for everyone.
+        // There is no remote data source, so we can't load anything.
+        console.log("No Gist URL configured. The site is in a fresh state.");
+      }
+      
+      setIsLoading(false);
     };
 
-    loadData();
-  }, []); // Run only once on mount
+    loadInitialData();
+  }, []); // Empty dependency array means this runs only once on mount.
+
 
   // Effect to select a random ad to display
   useEffect(() => {
@@ -230,6 +235,9 @@ const App: React.FC = () => {
             subscriptionUrl,
             adSettings,
         };
+        
+        // Also save the up-to-date content to local storage immediately before syncing.
+        localStorage.setItem('janaKidsContent', JSON.stringify(contentToSync));
 
         const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
         const AUTH_HEADERS = {
@@ -296,15 +304,6 @@ const App: React.FC = () => {
     };
   }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings]);
 
-  // Effect for saving content to local storage on any change
-  useEffect(() => {
-    if (isLoading) return;
-    const contentToSave = {
-        videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings,
-    };
-    localStorage.setItem('janaKidsContent', JSON.stringify(contentToSave));
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, isLoading]);
-
 
   useEffect(() => {
     if(!isLoading) localStorage.setItem('janaKidsCredentials', JSON.stringify(credentials));
@@ -358,7 +357,9 @@ const App: React.FC = () => {
         setSyncSettings(settings);
         localStorage.setItem('janaKidsSyncSettings', JSON.stringify(settings));
         
-        setToastMessage({ text: 'تم ربط ومزامنة البيانات بنجاح!', type: 'success' });
+        setToastMessage({ text: 'تم ربط ومزامنة البيانات بنجاح! سيتم تحديث الصفحة لرؤية التغييرات.', type: 'success' });
+        setTimeout(() => window.location.reload(), 2000); // Reload to apply new Gist source
+
     } catch (error) {
         setToastMessage({ text: (error as Error).message, type: 'error' });
         throw error;
