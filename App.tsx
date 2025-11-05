@@ -85,37 +85,31 @@ const fetchGistData = async (settings: GistSyncSettings): Promise<any> => {
     }
 
     if (!fileToUse) throw new Error("لم يتم العثور على ملف بيانات مناسب في Gist.");
-
-    // Handle truncated content by fetching from raw_url
-    if (fileToUse.truncated || typeof fileToUse.content !== 'string') {
-        console.warn("Gist content is truncated or missing, fetching from raw URL.", fileToUse.raw_url);
-        
-        let fileContent;
-        try {
-            const rawResponse = await fetch(fileToUse.raw_url);
-            if (!rawResponse.ok) {
-                throw new Error(`فشل تحميل المحتوى الكامل للملف (status: ${rawResponse.status})`);
-            }
-            fileContent = await rawResponse.text();
-        } catch (networkError) {
-            console.error("Network error fetching raw Gist content:", networkError);
-            throw new Error("فشل الاتصال بـ GitHub لتحميل الملف. يرجى التحقق من اتصال الإنترنت.");
-        }
-        
-        try {
-            return JSON.parse(fileContent);
-        } catch (e) {
-            console.error("Error parsing content from raw_url:", e);
-            throw new Error(`فشل تحليل البيانات من Gist. قد يكون الملف تالفًا. (${e.message})`);
-        }
+    if (!fileToUse.raw_url) {
+        throw new Error("لم يتم العثور على رابط الملف الخام (raw_url) في Gist.");
     }
 
-    // Original path: parse content from metadata response
+    console.log("Fetching content directly from raw URL:", fileToUse.raw_url);
+    
+    let fileContent;
     try {
-        return JSON.parse(fileToUse.content);
+        // We always fetch from raw_url to ensure we get the full, untruncated content.
+        const rawResponse = await fetch(fileToUse.raw_url);
+        if (!rawResponse.ok) {
+            throw new Error(`فشل تحميل المحتوى الكامل للملف (status: ${rawResponse.status})`);
+        }
+        fileContent = await rawResponse.text();
+    } catch (networkError) {
+        console.error("Network error fetching raw Gist content:", networkError);
+        throw new Error("فشل الاتصال بـ GitHub لتحميل الملف. يرجى التحقق من اتصال الإنترنت.");
+    }
+
+    try {
+        return JSON.parse(fileContent);
     } catch (e) {
-        console.error("Error parsing content from Gist metadata:", e);
-        throw new Error(`فشل تحليل البيانات من Gist. قد يكون الملف تالفًا. (${e.message})`);
+        const error = e as Error;
+        console.error("Error parsing content from raw_url:", error);
+        throw new Error(`فشل تحليل البيانات من Gist. قد يكون الملف تالفًا أو غير مكتمل. (${error.message})`);
     }
 };
 
@@ -228,7 +222,7 @@ const App: React.FC = () => {
                     dataLoadedFromRemote = true;
                 } catch (error) {
                     console.error("Failed to fetch from Gist on startup. Will use cache.", error);
-                    setToastMessage({ text: `${error.message} سيتم عرض نسخة محفوظة.`, type: 'error' });
+                    setToastMessage({ text: `${(error as Error).message} سيتم عرض نسخة محفوظة.`, type: 'error' });
                 }
             }
         }
@@ -351,7 +345,7 @@ const App: React.FC = () => {
 
       } catch (error) {
         console.error("Failed to sync data to Gist:", error);
-        setToastMessage({ text: error.message, type: 'error' });
+        setToastMessage({ text: (error as Error).message, type: 'error' });
       } finally {
         setIsSyncing(false);
       }
@@ -392,7 +386,7 @@ const App: React.FC = () => {
         setToastMessage({ text: 'تم الاتصال وتحميل البيانات بنجاح!', type: 'success' });
     } catch (error) {
         console.error("Failed to test/load from Gist:", error);
-        setToastMessage({ text: error.message, type: 'error' });
+        setToastMessage({ text: (error as Error).message, type: 'error' });
         // Re-throw to let the caller know it failed
         throw error;
     } finally {
