@@ -270,7 +270,7 @@ const App: React.FC = () => {
             adSettings,
         };
 
-        console.log(`Fetching metadata for Gist ID: ${gistId} to perform sync.`);
+        console.log(`Fetching metadata for Gist ID: ${gistId} to perform cleanup and sync.`);
         const metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
             headers: {
                 'Authorization': `token ${syncSettings.githubToken}`,
@@ -286,45 +286,22 @@ const App: React.FC = () => {
         const gistData = await metaResponse.json();
         const files = gistData.files;
         const filenames = Object.keys(files);
-
         const jsonFiles = filenames.filter(f => f.toLowerCase().endsWith('.json'));
-
         const filesToPatch: { [key: string]: any } = {};
 
-        if (jsonFiles.length === 0) {
-            // Case 1: Gist has no JSON files. Create a new one.
-            console.log("No JSON files found in Gist. Creating canonical file.");
-            filesToPatch[CANONICAL_FILENAME] = {
-                content: JSON.stringify(contentToSync, null, 2),
-            };
-        } else {
-            // Case 2: Gist has one or more JSON files. Consolidate and update.
-            let sourceFilename = '';
-
-            if (files[CANONICAL_FILENAME]) {
-                sourceFilename = CANONICAL_FILENAME;
-                console.log(`Found canonical file: ${sourceFilename}. Will update it.`);
-            } else {
-                // Find the best alternative to migrate from. Let's just pick the first one.
-                sourceFilename = jsonFiles[0];
-                console.warn(`Canonical file not found. Migrating from source file: ${sourceFilename}`);
+        // Step 1: Mark all non-canonical JSON files for deletion.
+        jsonFiles.forEach(filename => {
+            if (filename !== CANONICAL_FILENAME) {
+                console.log(`Marking for deletion (is not canonical): ${filename}`);
+                filesToPatch[filename] = null;
             }
+        });
 
-            // Prepare the main update/rename operation.
-            // This will update content and rename to canonical if needed.
-            filesToPatch[sourceFilename] = {
-                filename: CANONICAL_FILENAME,
-                content: JSON.stringify(contentToSync, null, 2),
-            };
-
-            // Mark all other json files for deletion.
-            jsonFiles.forEach(name => {
-                if (name !== sourceFilename) {
-                    console.log(`Marking for deletion: ${name}`);
-                    filesToPatch[name] = null; // Delete
-                }
-            });
-        }
+        // Step 2: Always update/create the canonical file with the latest content.
+        console.log(`Setting content for the canonical file: ${CANONICAL_FILENAME}`);
+        filesToPatch[CANONICAL_FILENAME] = {
+            content: JSON.stringify(contentToSync, null, 2),
+        };
         
         console.log("Preparing to PATCH Gist with following changes:", filesToPatch);
 
