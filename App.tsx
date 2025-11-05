@@ -121,48 +121,68 @@ const App: React.FC = () => {
     setNewVideoIds(newIds);
   };
 
-  // Effect for initial data loading
+  // Effect for initial data loading from Gist, with localStorage fallback.
   useEffect(() => {
-    const loadInitialData = () => {
+    const loadData = async () => {
         setIsLoading(true);
 
-        // Load settings and credentials from localStorage
+        // Load settings and credentials from localStorage first
         const savedSyncSettingsRaw = localStorage.getItem('janaKidsSyncSettings');
+        let settings: GistSyncSettings | null = null;
         if (savedSyncSettingsRaw) {
             try {
-                const settings: GistSyncSettings = JSON.parse(savedSyncSettingsRaw);
-                setSyncSettings(settings);
-            } catch (e) {
-                console.error("Could not parse sync settings from local storage.", e);
-            }
+                settings = JSON.parse(savedSyncSettingsRaw);
+                setSyncSettings(settings!);
+            } catch (e) { console.error("Could not parse sync settings.", e); }
         }
         const savedCredentials = localStorage.getItem('janaKidsCredentials');
         if (savedCredentials) {
             try {
                 setCredentials(JSON.parse(savedCredentials));
-            } catch (e) {
-                 console.error("Could not parse credentials from local storage.", e);
+            } catch (e) { console.error("Could not parse credentials.", e); }
+        }
+
+        let dataLoaded = false;
+        // Priority 1: Fetch from remote Gist if URL is configured
+        if (settings && settings.gistUrl) {
+            try {
+                console.log(`Fetching initial data from Gist: ${settings.gistUrl}`);
+                const response = await fetch(settings.gistUrl, { cache: 'no-store' }); // Disable caching to get latest version
+                if (!response.ok) {
+                    throw new Error(`Gist fetch failed with status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log("Successfully loaded data from Gist.");
+                setDataFromRemote(data);
+                localStorage.setItem('janaKidsContent', JSON.stringify(data)); // Update local cache with fresh data
+                dataLoaded = true;
+            } catch (error) {
+                console.error("Could not load from Gist, will try local storage fallback.", error);
+                setToastMessage({ text: 'فشل تحميل البيانات من الإنترنت، سيتم عرض نسخة محفوظة.', type: 'error' });
             }
         }
 
-        // Always load content from localStorage. This prevents remote data from overwriting local changes.
-        const localDataRaw = localStorage.getItem('janaKidsContent');
-        if (localDataRaw) {
-            try {
-                console.log("Loading data from local storage cache.");
-                const localData = JSON.parse(localDataRaw);
-                setDataFromRemote(localData);
-            } catch (e) {
-                console.error("Could not parse local content data.", e);
+        // Priority 2: Fallback to localStorage if Gist fetch failed or wasn't configured
+        if (!dataLoaded) {
+            const localDataRaw = localStorage.getItem('janaKidsContent');
+            if (localDataRaw) {
+                try {
+                    console.log("Loading data from local storage cache.");
+                    const localData = JSON.parse(localDataRaw);
+                    setDataFromRemote(localData);
+                } catch (e) {
+                    console.error("Could not parse local content data.", e);
+                }
+            } else {
+                console.log("No remote or local data found. Starting with a fresh slate.");
             }
-        } else {
-            console.log("No local data found. Starting with a fresh slate.");
         }
 
         setIsLoading(false);
     };
-    loadInitialData();
-  }, []);
+
+    loadData();
+  }, []); // Run only once on mount
 
   // Effect to select a random ad to display
   useEffect(() => {
