@@ -4,7 +4,7 @@ import React from 'react';
 const Footer: React.FC = () => {
   return (
     <footer className="bg-gray-800 text-white text-center p-4 mt-12">
-      <p>&copy; {new Date().getFullYear()} Jana Kids – جميع الحقوق محفوظة</p>
+      <p>كل الحقوق محفوظة لقناة Jana Kids &copy; {new Date().getFullYear()}</p>
     </footer>
   );
 };
