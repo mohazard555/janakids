@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { AdSettings, Ad } from '../types';
 
 interface GistSyncSettings {
-    gistUrl: string;
     githubToken: string;
 }
 
@@ -37,7 +36,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     const [subscriptionUrl, setSubscriptionUrl] = useState(currentSubscriptionUrl);
 
     // Sync State
-    const [gistUrl, setGistUrl] = useState('');
     const [githubToken, setGithubToken] = useState('');
     const [isTesting, setIsTesting] = useState(false);
 
@@ -58,7 +56,6 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
 
 
     useEffect(() => {
-        setGistUrl(currentSyncSettings.gistUrl || '');
         setGithubToken(currentSyncSettings.githubToken || '');
         setLocalAds(currentAdSettings.ads || []);
         setCtaEnabled(currentAdSettings.ctaEnabled);
@@ -95,7 +92,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         e.preventDefault();
         setIsTesting(true);
         try {
-            await onConfigureAndSync({ gistUrl, githubToken });
+            await onConfigureAndSync({ githubToken });
         } catch (error) {
            // Error toast is handled in the parent component
            console.log("Configuration and sync failed, user was notified.");
@@ -314,16 +311,14 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
 
             <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200">
                 <h3 className="text-xl font-bold text-center text-sky-700 mb-3">تمكين المزامنة عبر الإنترنت</h3>
+                 <p className="text-gray-600 text-sm mb-4 text-center">
+                    مصدر البيانات محدد في الكود. للمزامنة، تحتاج فقط لرمز GitHub.
+                </p>
                 <ol className="list-decimal list-inside text-gray-600 text-sm mb-4 space-y-1 text-right">
-                    <li>ألصق <strong>Gist Raw URL</strong> في الحقل أدناه ليكون مصدر بيانات الموقع.</li>
-                    <li>أنشئ <strong>(Personal Access Token (Classic</strong> من إعدادات GitHub مع صلاحية `gist` فقط.</li>
-                    <li>ألصق الـ <strong>Token</strong> في الحقل الثاني لتمكين الحفظ والمزامنة.</li>
+                     <li>أنشئ <strong>(Personal Access Token (Classic</strong> من إعدادات GitHub مع صلاحية `gist` فقط.</li>
+                    <li>ألصق الـ <strong>Token</strong> في الحقل أدناه لتمكين الحفظ والمزامنة التلقائية.</li>
                 </ol>
                 <form onSubmit={handleSyncSubmit} className="space-y-4">
-                    <div>
-                        <label htmlFor="gist-url" className="block text-right text-gray-700 font-semibold mb-1">رابط Gist Raw للمزامنة</label>
-                        <input id="gist-url" type="url" value={gistUrl} onChange={(e) => setGistUrl(e.target.value)} placeholder="https://gist.githubusercontent.com/user/123.../raw/data.json" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" autoComplete="off" />
-                    </div>
                     <div>
                         <label htmlFor="github-token" className="block text-right text-gray-700 font-semibold mb-1">GitHub Personal Access Token</label>
                         <input id="github-token" type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" autoComplete="new-password" />
@@ -333,7 +328,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                         className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition-colors duration-300 shadow-lg text-md disabled:bg-sky-300 disabled:cursor-not-allowed"
                         disabled={isTesting}
                     >
-                        {isTesting ? '...جاري المزامنة' : 'ربط ومزامنة البيانات'}
+                        {isTesting ? '...جاري الربط' : 'ربط رمز المزامنة'}
                     </button>
                 </form>
             </div>

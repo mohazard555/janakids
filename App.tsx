@@ -21,8 +21,25 @@ import AdvertiserCta from './components/AdvertiserCta';
 import SyncIndicator from './components/SyncIndicator';
 import type { Video, Playlist, Activity, AdSettings, Ad } from './types';
 
+
+// ====================================================================================
+// ====================================================================================
+// =================== خطوة إعداد لمرة واحدة: من فضلك قم بلصق الرابط هنا ===================
+// ====================================================================================
+//
+// 1. اذهب إلى ملف `jana_kids_data.json` الخاص بك على GitHub Gist.
+// 2. اضغط على زر "Raw" لعرض المحتوى الخام للملف.
+// 3. انسخ الرابط (URL) بالكامل من شريط عنوان المتصفح.
+// 4. ألصق الرابط المنسوخ أدناه بين علامتي الاقتباس "".
+//
+// مثال: "https://gist.githubusercontent.com/your-username/abcdef123456/raw/abcdef123456/jana_kids_data.json"
+//
+const GIST_RAW_URL = "https://gist.githubusercontent.com/mohazard555/d6be309aba18145be395d6ee0bc7ca7a/raw/jana%2520kids_data.json"; 
+//
+// ====================================================================================
+
+
 interface GistSyncSettings {
-    gistUrl: string;
     githubToken: string;
 }
 
@@ -75,7 +92,7 @@ const App: React.FC = () => {
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
-  const [syncSettings, setSyncSettings] = useState<GistSyncSettings>({ gistUrl: '', githubToken: '' });
+  const [syncSettings, setSyncSettings] = useState<GistSyncSettings>({ githubToken: '' });
 
   const syncTimerRef = useRef<number | null>(null);
 
@@ -120,47 +137,39 @@ const App: React.FC = () => {
     const newIds = allVideoIds.filter((id: number) => !seenVideoIds.includes(id));
     setNewVideoIds(newIds);
   };
-
-  // Effect for initial data loading.
-  // This is the source of truth for all users. It prioritizes fetching the latest
-  // data from the configured Gist URL, falling back to localStorage only if the network fails.
+  
+  // Effect for initial data loading from the hardcoded GIST_RAW_URL.
+  // This is the single source of truth for all users.
   useEffect(() => {
     const loadInitialData = async () => {
       setIsLoading(true);
 
-      // Step 1: Load configuration from localStorage. This is needed to find the Gist URL.
-      const savedSyncSettingsRaw = localStorage.getItem('janaKidsSyncSettings');
-      const localSettings = savedSyncSettingsRaw ? JSON.parse(savedSyncSettingsRaw) : null;
-      if (localSettings) {
-        setSyncSettings(localSettings);
-      }
-      
+      // Load admin-specific settings from localStorage (credentials, token)
       const savedCredentials = localStorage.getItem('janaKidsCredentials');
       if (savedCredentials) {
-        try {
-          setCredentials(JSON.parse(savedCredentials));
-        } catch (e) { console.error("Could not parse credentials.", e); }
+        try { setCredentials(JSON.parse(savedCredentials)); } catch (e) { console.error("Could not parse credentials.", e); }
       }
-
-      const gistUrl = localSettings?.gistUrl;
-
-      // Step 2: Main data loading logic. Prioritize remote Gist for all users.
-      if (gistUrl) {
+      const savedSyncSettingsRaw = localStorage.getItem('janaKidsSyncSettings');
+      if (savedSyncSettingsRaw) {
         try {
-          // Use a cache-busting parameter to ensure the latest version is fetched.
-          const cacheBustedUrl = `${gistUrl}?t=${Date.now()}`;
+            const settings = JSON.parse(savedSyncSettingsRaw);
+            setSyncSettings({ githubToken: settings.githubToken || '' });
+        } catch(e) { console.error("Could not parse sync settings.", e); }
+      }
+      
+      // Main data loading logic. Prioritize the hardcoded remote Gist for all users.
+      if (GIST_RAW_URL) {
+        try {
+          const cacheBustedUrl = `${GIST_RAW_URL}?t=${Date.now()}`;
           console.log(`Fetching initial data from: ${cacheBustedUrl}`);
           const response = await fetch(cacheBustedUrl, { cache: 'no-store' });
           
-          if (!response.ok) {
-            throw new Error(`Network response was not ok: ${response.statusText}`);
-          }
+          if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
           
           const data = await response.json();
           console.log("Successfully fetched and applied data from Gist.", data);
           setDataFromRemote(data);
-          // Update the local cache with the fresh data from the server.
-          localStorage.setItem('janaKidsContent', JSON.stringify(data));
+          localStorage.setItem('janaKidsContent', JSON.stringify(data)); // Update local cache
         } catch (error) {
           console.error("Failed to fetch from Gist, falling back to localStorage.", error);
           setToastMessage({ text: 'فشل تحميل البيانات، عرض نسخة محفوظة.', type: 'error' });
@@ -177,9 +186,8 @@ const App: React.FC = () => {
           }
         }
       } else {
-        // If no Gist URL is configured, this means it's a fresh site for everyone.
-        // There is no remote data source, so we can't load anything.
-        console.log("No Gist URL configured. The site is in a fresh state.");
+        // If no Gist URL is configured, we can't load anything.
+        console.warn("GIST_RAW_URL is not set in App.tsx. Cannot load data.");
       }
       
       setIsLoading(false);
@@ -207,7 +215,7 @@ const App: React.FC = () => {
 
   // Effect for syncing data to Gist on change (debounced)
   useEffect(() => {
-    if (isLoading || !isLoggedIn || !syncSettings.gistUrl || !syncSettings.githubToken) {
+    if (isLoading || !isLoggedIn || !GIST_RAW_URL || !syncSettings.githubToken) {
       return;
     }
 
@@ -218,9 +226,9 @@ const App: React.FC = () => {
     syncTimerRef.current = window.setTimeout(async () => {
       setIsSyncing(true);
       try {
-        const gistId = getGistId(syncSettings.gistUrl);
+        const gistId = getGistId(GIST_RAW_URL);
         if (!gistId) {
-          throw new Error("رابط Gist غير صالح. لا يمكن المزامنة.");
+          throw new Error("رابط Gist المحدد في الكود غير صالح. لا يمكن المزامنة.");
         }
 
         console.log(`Starting automatic sync for Gist ID: ${gistId}.`);
@@ -236,7 +244,6 @@ const App: React.FC = () => {
             adSettings,
         };
         
-        // Also save the up-to-date content to local storage immediately before syncing.
         localStorage.setItem('janaKidsContent', JSON.stringify(contentToSync));
 
         const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
@@ -312,9 +319,9 @@ const App: React.FC = () => {
   const handleConfigureAndSync = async (settings: GistSyncSettings) => {
     setIsSyncing(true);
     try {
-        const gistId = getGistId(settings.gistUrl);
-        if (!gistId) throw new Error("رابط Gist غير صالح.");
-        if (!settings.githubToken) throw new Error("رمز GitHub مطلوب.");
+        const gistId = getGistId(GIST_RAW_URL);
+        if (!gistId) throw new Error("رابط Gist المحدد في الكود غير صالح. يرجى مراجعة ملف App.tsx");
+        if (!settings.githubToken) throw new Error("رمز GitHub مطلوب للمزامنة.");
 
         const contentToSync = {
             videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings,
@@ -357,8 +364,7 @@ const App: React.FC = () => {
         setSyncSettings(settings);
         localStorage.setItem('janaKidsSyncSettings', JSON.stringify(settings));
         
-        setToastMessage({ text: 'تم ربط ومزامنة البيانات بنجاح! سيتم تحديث الصفحة لرؤية التغييرات.', type: 'success' });
-        setTimeout(() => window.location.reload(), 2000); // Reload to apply new Gist source
+        setToastMessage({ text: 'تم ربط رمز المزامنة بنجاح!', type: 'success' });
 
     } catch (error) {
         setToastMessage({ text: (error as Error).message, type: 'error' });
@@ -566,6 +572,22 @@ const App: React.FC = () => {
     );
   }
 
+  if (!GIST_RAW_URL) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-800 p-8">
+          <div className="text-center max-w-2xl bg-white p-10 rounded-2xl shadow-2xl border-2 border-red-200">
+              <h1 className="text-4xl font-black mb-4">⚠️ خطوة مهمة مطلوبة</h1>
+              <p className="text-lg mb-6">
+                  مصدر بيانات الموقع غير محدد. لكي يعمل الموقع، يجب على المطور تعديل ملف <code className="bg-red-100 p-1 rounded-md text-base font-mono">App.tsx</code> وإضافة رابط البيانات الخام (Raw URL) الخاص بملف Gist.
+              </p>
+              <p className="text-gray-600">
+                  الرجاء مراجعة التعليمات الموجودة في أعلى الملف.
+              </p>
+          </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen relative">
       <div className="absolute top-1/4 left-5 sm:left-10 text-8xl opacity-10 select-none -z-10 transform -rotate-12 pointer-events-none" aria-hidden="true">🦁</div>
@@ -656,9 +678,18 @@ const App: React.FC = () => {
               />
             ))
           ) : (
-            <div className="col-span-full text-center py-16">
-                <p className="text-2xl text-gray-500">
-                    {searchQuery ? `لا توجد نتائج بحث عن "${searchQuery}"` : 'لم تتم إضافة أي فيديوهات بعد.'}
+            <div className="col-span-full text-center py-16 bg-white/50 rounded-3xl shadow-inner border-2 border-dashed border-sky-200">
+                <div className="text-6xl mb-4">🎬</div>
+                <h3 className="text-3xl font-bold text-sky-700 mb-2">
+                  {searchQuery ? `لا توجد نتائج بحث` : 'مكتبة الفيديو فارغة حالياً'}
+                </h3>
+                <p className="text-lg text-gray-600 max-w-xl mx-auto">
+                    {searchQuery 
+                        ? `لم نتمكن من العثور على أي فيديو يطابق "${searchQuery}".` 
+                        : (isLoggedIn 
+                            ? 'رائع! لنبدأ بإضافة أول فيديو لك من لوحة تحكم الأدمن في الأعلى.' 
+                            : 'يبدو أنه لم تتم إضافة أي فيديوهات حتى الآن. يرجى العودة لاحقاً لمشاهدة محتوى جديد!')
+                    }
                 </p>
             </div>
           )}
