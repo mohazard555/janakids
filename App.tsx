@@ -55,7 +55,7 @@ const fetchGistData = async (settings: GistSyncSettings): Promise<any> => {
     try {
         metaResponse = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
     } catch (networkError) {
-        console.error("Network error fetching Gist:", networkError);
+        console.error("Network error fetching Gist metadata:", networkError);
         throw new Error("فشل الاتصال بـ GitHub. يرجى التحقق من اتصال الإنترنت.");
     }
 
@@ -84,9 +84,39 @@ const fetchGistData = async (settings: GistSyncSettings): Promise<any> => {
         console.warn(`Canonical filename not found. Using fallback: ${fallbackFilename}`);
     }
 
-    if (!fileToUse || typeof fileToUse.content !== 'string') throw new Error("لم يتم العثور على ملف بيانات مناسب في Gist.");
+    if (!fileToUse) throw new Error("لم يتم العثور على ملف بيانات مناسب في Gist.");
 
-    return JSON.parse(fileToUse.content);
+    // Handle truncated content by fetching from raw_url
+    if (fileToUse.truncated || typeof fileToUse.content !== 'string') {
+        console.warn("Gist content is truncated or missing, fetching from raw URL.", fileToUse.raw_url);
+        
+        let fileContent;
+        try {
+            const rawResponse = await fetch(fileToUse.raw_url);
+            if (!rawResponse.ok) {
+                throw new Error(`فشل تحميل المحتوى الكامل للملف (status: ${rawResponse.status})`);
+            }
+            fileContent = await rawResponse.text();
+        } catch (networkError) {
+            console.error("Network error fetching raw Gist content:", networkError);
+            throw new Error("فشل الاتصال بـ GitHub لتحميل الملف. يرجى التحقق من اتصال الإنترنت.");
+        }
+        
+        try {
+            return JSON.parse(fileContent);
+        } catch (e) {
+            console.error("Error parsing content from raw_url:", e);
+            throw new Error(`فشل تحليل البيانات من Gist. قد يكون الملف تالفًا. (${e.message})`);
+        }
+    }
+
+    // Original path: parse content from metadata response
+    try {
+        return JSON.parse(fileToUse.content);
+    } catch (e) {
+        console.error("Error parsing content from Gist metadata:", e);
+        throw new Error(`فشل تحليل البيانات من Gist. قد يكون الملف تالفًا. (${e.message})`);
+    }
 };
 
 
