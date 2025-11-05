@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useState, useRef } from 'react';
 
 interface HeaderProps {
     logo: string | null;
@@ -21,11 +21,37 @@ const CameraIcon: React.FC = () => (
 
 const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange, videoCount, subscriptionUrl }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [logoClickCount, setLogoClickCount] = useState(0);
+    const [showLoginButton, setShowLoginButton] = useState(false);
+    const clickTimeoutRef = useRef<number | null>(null);
 
     const handleLogoClick = () => {
         if (isLoggedIn) {
             fileInputRef.current?.click();
+            return;
         }
+
+        if (clickTimeoutRef.current) {
+            clearTimeout(clickTimeoutRef.current);
+        }
+
+        const newClickCount = logoClickCount + 1;
+        setLogoClickCount(newClickCount);
+
+        if (newClickCount >= 5) {
+            setShowLoginButton(true);
+            setLogoClickCount(0); // Reset after showing
+        } else {
+            // Set a new timeout to reset clicks if the user is too slow
+            clickTimeoutRef.current = window.setTimeout(() => {
+                setLogoClickCount(0);
+            }, 1500); // 1.5 seconds to complete the 5 clicks
+        }
+    };
+
+    const handleLogout = () => {
+        onLogoutClick();
+        setShowLoginButton(false);
     };
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,9 +84,8 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                     )}
                     <button
                         onClick={handleLogoClick}
-                        className={`group w-32 h-32 bg-white/30 rounded-full flex items-center justify-center border-4 border-dashed border-white/50 transition-all duration-300 ${isLoggedIn ? 'cursor-pointer hover:border-white hover:bg-white/40' : 'cursor-default'}`}
-                        aria-label="Change channel logo"
-                        disabled={!isLoggedIn}
+                        className={`group w-32 h-32 bg-white/30 rounded-full flex items-center justify-center border-4 border-dashed border-white/50 transition-all duration-300 cursor-pointer ${isLoggedIn ? 'hover:border-white hover:bg-white/40' : ''}`}
+                        aria-label={isLoggedIn ? "Change channel logo" : "Channel logo (click 5 times for admin login)"}
                     >
                         {logo ? (
                             <img src={logo} alt="Channel Logo" className="w-full h-full rounded-full object-cover" />
@@ -104,16 +129,18 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                     )}
                 </div>
             </div>
-            <button
-                onClick={isLoggedIn ? onLogoutClick : onLoginClick}
-                className={`absolute top-4 left-4 font-bold py-2 px-4 rounded-full transition-colors duration-300 shadow-lg ${
-                    isLoggedIn
-                    ? 'bg-red-500 hover:bg-red-600 text-white'
-                    : 'bg-green-500 hover:bg-green-600 text-white'
-                }`}
-            >
-                {isLoggedIn ? 'خروج من وضع الأدمن' : 'الدخول كأدمن'}
-            </button>
+            {(isLoggedIn || showLoginButton) && (
+                <button
+                    onClick={isLoggedIn ? handleLogout : onLoginClick}
+                    className={`absolute top-4 left-4 font-bold py-2 px-4 rounded-full transition-colors duration-300 shadow-lg ${
+                        isLoggedIn
+                        ? 'bg-red-500 hover:bg-red-600 text-white'
+                        : 'bg-green-500 hover:bg-green-600 text-white animate-fade-in'
+                    }`}
+                >
+                    {isLoggedIn ? 'خروج من وضع الأدمن' : 'الدخول كأدمن'}
+                </button>
+            )}
         </header>
     );
 };
