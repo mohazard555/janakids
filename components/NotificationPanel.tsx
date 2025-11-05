@@ -18,9 +18,21 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ newVideos, onClos
                     <ul>
                         {newVideos.map(video => (
                             <li key={video.id} className="border-b last:border-b-0">
-                                <a href={video.youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center p-3 hover:bg-sky-50 transition-colors">
-                                    <img src={video.thumbnailUrl} alt={video.title} className="w-16 h-12 object-cover rounded-md flex-shrink-0" />
-                                    <p className="text-sm text-gray-700 mr-3 line-clamp-2">{video.title}</p>
+                                <a href={video.youtubeUrl} target="_blank" rel="noopener noreferrer" className="group flex items-center p-3 hover:bg-sky-50 transition-colors duration-200">
+                                    <div className="relative w-16 h-12 flex-shrink-0">
+                                        <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover rounded-md" />
+                                        <div className="absolute inset-0 bg-black/60 rounded-md flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-center p-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                    <div className="mr-3 flex-1 overflow-hidden">
+                                        <p className="text-sm text-gray-800 group-hover:text-sky-600 font-bold truncate transition-colors">{video.title}</p>
+                                        <p className="text-xs text-sky-700 transform translate-y-1 opacity-0 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 font-semibold">
+                                            ادخل للمشاهدة
+                                        </p>
+                                    </div>
                                 </a>
                             </li>
                         ))}
