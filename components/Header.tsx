@@ -70,7 +70,7 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                         Jana Kids
                     </h1>
                     <h2 className="text-3xl font-bold mt-4">
-                        قصص Jana Kids للأطفال
+                        قصص Jana Kids الرائعة للأطفال
                     </h2>
                     {isLoggedIn ? (
                         <textarea
