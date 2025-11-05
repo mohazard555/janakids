@@ -104,6 +104,7 @@ const App: React.FC = () => {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [channelLogo, setChannelLogo] = useState<string | null>(null);
   const [channelDescription, setChannelDescription] = useState('قناة جنى كيدز تقدم لكم أجمل قصص الأطفال التعليمية والترفيهية. انضموا إلينا في مغامرات شيقة وممتعة!');
+  const [subscriptionUrl, setSubscriptionUrl] = useState<string>('');
   const [adSettings, setAdSettings] = useState<AdSettings>(defaultAdSettings);
 
   // App Control State
@@ -155,6 +156,7 @@ const App: React.FC = () => {
     setChannelLogo(data.channelLogo ?? null);
     setPlaylists(data.playlists ?? []);
     setChannelDescription(data.channelDescription ?? channelDescription);
+    setSubscriptionUrl(data.subscriptionUrl ?? '');
 
     const migratedAdSettings = migrateAdSettings(data.adSettings);
     setAdSettings(migratedAdSettings);
@@ -261,6 +263,7 @@ const App: React.FC = () => {
             channelLogo,
             playlists,
             channelDescription,
+            subscriptionUrl,
             adSettings,
         };
 
@@ -325,16 +328,16 @@ const App: React.FC = () => {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, adSettings, isLoading, isLoggedIn, syncSettings]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, isLoading, isLoggedIn, syncSettings]);
 
   // Effect for saving content to local storage on any change
   useEffect(() => {
     if (isLoading) return;
     const contentToSave = {
-        videos, shorts, activities, channelLogo, playlists, channelDescription, adSettings,
+        videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings,
     };
     localStorage.setItem('janaKidsContent', JSON.stringify(contentToSave));
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, adSettings, isLoading]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, isLoading]);
 
 
   useEffect(() => {
@@ -517,6 +520,8 @@ const App: React.FC = () => {
         onLogoutClick={() => setIsLoggedIn(false)}
         channelDescription={channelDescription}
         onDescriptionChange={setChannelDescription}
+        videoCount={videos.length}
+        subscriptionUrl={subscriptionUrl}
       />
       <main className="container mx-auto px-4 py-10">
         <div className="my-8 flex justify-between items-center relative">
@@ -543,6 +548,8 @@ const App: React.FC = () => {
                     <AdminSettings 
                         onCredentialsChange={setCredentials} 
                         currentCredentials={credentials}
+                        onSubscriptionUrlChange={setSubscriptionUrl}
+                        currentSubscriptionUrl={subscriptionUrl}
                         onTestAndLoadFromGist={handleTestAndLoadFromGist}
                         currentSyncSettings={syncSettings}
                         onAdSettingsChange={handleAdSettingsChange}

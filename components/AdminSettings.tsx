@@ -9,6 +9,8 @@ interface GistSyncSettings {
 interface AdminSettingsProps {
     onCredentialsChange: (credentials: { username: string, password: string }) => void;
     currentCredentials: { username: string, password: string };
+    onSubscriptionUrlChange: (url: string) => void;
+    currentSubscriptionUrl: string;
     onTestAndLoadFromGist: (settings: GistSyncSettings) => Promise<any>;
     currentSyncSettings: GistSyncSettings;
     onAdSettingsChange: (settings: AdSettings) => void;
@@ -17,15 +19,18 @@ interface AdminSettingsProps {
 
 const AdminSettings: React.FC<AdminSettingsProps> = ({ 
     onCredentialsChange, 
-    currentCredentials, 
+    currentCredentials,
+    onSubscriptionUrlChange,
+    currentSubscriptionUrl, 
     onTestAndLoadFromGist, 
     currentSyncSettings,
     onAdSettingsChange,
     currentAdSettings
 }) => {
-    // Credentials State
+    // General Settings State
     const [username, setUsername] = useState(currentCredentials.username);
     const [password, setPassword] = useState(currentCredentials.password);
+    const [subscriptionUrl, setSubscriptionUrl] = useState(currentSubscriptionUrl);
 
     // Sync State
     const [gistUrl, setGistUrl] = useState('');
@@ -52,7 +57,8 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         setCtaEnabled(currentAdSettings.ctaEnabled);
         setCtaText(currentAdSettings.ctaText);
         setCtaLink(currentAdSettings.ctaLink);
-    }, [currentSyncSettings, currentAdSettings]);
+        setSubscriptionUrl(currentSubscriptionUrl || '');
+    }, [currentSyncSettings, currentAdSettings, currentSubscriptionUrl]);
 
     useEffect(() => {
         if (adImageFile) {
@@ -67,14 +73,15 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     }, [adImageFile]);
 
 
-    const handleCredentialsSubmit = (e: React.FormEvent) => {
+    const handleGeneralSettingsSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!username.trim() || !password.trim()) {
             alert('لا يمكن ترك اسم المستخدم أو كلمة المرور فارغة');
             return;
         }
         onCredentialsChange({ username, password });
-        alert('تم تحديث معلومات تسجيل الدخول بنجاح!');
+        onSubscriptionUrlChange(subscriptionUrl);
+        alert('تم تحديث الإعدادات العامة بنجاح!');
     };
 
     const handleSyncSubmit = async (e: React.FormEvent) => {
@@ -162,21 +169,31 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         <div className="bg-white p-6 rounded-2xl shadow-md h-full flex flex-col justify-between">
             <div>
                 <h2 className="text-2xl font-bold text-center text-gray-700 mb-6">إعدادات الأدمن</h2>
-                <form onSubmit={handleCredentialsSubmit} className="space-y-4 mb-8">
-                    <div>
-                        <label htmlFor="admin-username" className="block text-right text-gray-700 font-semibold mb-1">
-                            اسم مستخدم الأدمن
-                        </label>
-                        <input id="admin-username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition" autoComplete="username" />
-                    </div>
-                    <div>
-                        <label htmlFor="admin-password" className="block text-right text-gray-700 font-semibold mb-1">
-                            كلمة مرور الأدمن
-                        </label>
-                        <input id="admin-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition" autoComplete="current-password" />
-                    </div>
+                
+                <form onSubmit={handleGeneralSettingsSubmit} className="space-y-4 mb-8">
+                    <fieldset className="border border-gray-300 p-4 rounded-lg space-y-4">
+                        <legend className="px-2 font-semibold text-gray-800">الإعدادات العامة</legend>
+                        <div>
+                            <label htmlFor="admin-username" className="block text-right text-gray-700 font-semibold mb-1">
+                                اسم مستخدم الأدمن
+                            </label>
+                            <input id="admin-username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition" autoComplete="username" />
+                        </div>
+                        <div>
+                            <label htmlFor="admin-password" className="block text-right text-gray-700 font-semibold mb-1">
+                                كلمة مرور الأدمن
+                            </label>
+                            <input id="admin-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition" autoComplete="current-password" />
+                        </div>
+                        <div>
+                            <label htmlFor="subscription-url" className="block text-right text-gray-700 font-semibold mb-1">
+                                رابط الاشتراك بالقناة
+                            </label>
+                            <input id="subscription-url" type="url" value={subscriptionUrl} onChange={(e) => setSubscriptionUrl(e.target.value)} placeholder="https://www.youtube.com/channel/..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition" dir="ltr" />
+                        </div>
+                    </fieldset>
                     <button type="submit" className="w-full bg-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors duration-300 shadow-lg text-lg">
-                        حفظ بيانات الدخول
+                        حفظ الإعدادات العامة
                     </button>
                 </form>
 

@@ -8,6 +8,8 @@ interface HeaderProps {
     onLogoutClick: () => void;
     channelDescription: string;
     onDescriptionChange: (description: string) => void;
+    videoCount: number;
+    subscriptionUrl: string;
 }
 
 const CameraIcon: React.FC = () => (
@@ -17,7 +19,7 @@ const CameraIcon: React.FC = () => (
 );
 
 
-const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange }) => {
+const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange, videoCount, subscriptionUrl }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleLogoClick = () => {
@@ -32,6 +34,12 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
             onLogoUpload(file);
         }
     };
+
+    const SubscriptionContent: React.FC = () => (
+        <p className="mt-6 text-2xl font-bold bg-white/20 p-3 rounded-lg inline-block" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.1)'}}>
+            🔔 ارجو الاشتراك بالقناة وتفعيل الجرس لتشاهدوا ما هو جديد وممتع 🔔
+        </p>
+    );
 
     return (
         <header className="bg-gradient-to-r from-pink-400 to-yellow-300 text-white p-6 shadow-lg relative">
@@ -66,8 +74,9 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                 </div>
                  {/* Text content will be on the left in RTL */}
                 <div className="flex-1 text-right mr-8">
-                    <h1 className="text-5xl font-black tracking-wider" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.2)' }}>
-                        Jana Kids
+                    <h1 className="text-5xl font-black tracking-wider flex items-center justify-end" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.2)' }}>
+                        <span>Jana Kids</span>
+                        <span className="text-base font-bold bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full mr-4">{videoCount} فيديوهات</span>
                     </h1>
                     <h2 className="text-3xl font-bold mt-4">
                         مغامرات وقصص Jana Kids للأطفال
@@ -86,9 +95,13 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                             {channelDescription}
                         </p>
                     )}
-                    <p className="mt-6 text-2xl font-bold bg-white/20 p-3 rounded-lg inline-block" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.1)'}}>
-                        🔔 ارجو الاشتراك بالقناة وتفعيل الجرس لتشاهدوا ما هو جديد وممتع 🔔
-                    </p>
+                    {subscriptionUrl ? (
+                         <a href={subscriptionUrl} target="_blank" rel="noopener noreferrer" className="inline-block transition-transform duration-300 hover:scale-105">
+                           <SubscriptionContent />
+                         </a>
+                    ) : (
+                        <SubscriptionContent />
+                    )}
                 </div>
             </div>
             <button
