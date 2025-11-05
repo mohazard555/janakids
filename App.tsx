@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import VideoCard from './components/VideoCard';
@@ -30,11 +31,11 @@ import type { Video, Playlist, Activity, AdSettings, Ad } from './types';
 // 1. اذهب إلى ملف `jana_kids_data.json` الخاص بك على GitHub Gist.
 // 2. اضغط على زر "Raw" لعرض المحتوى الخام للملف.
 // 3. انسخ الرابط (URL) بالكامل من شريط عنوان المتصفح.
-// 4. ألصق الرابط المنسوخ أدناه بين علامتي الاقتباس "".
+// 4. ألصق الرابط المنسخ أدناه بين علامتي الاقتباس "".
 //
-// مثال: "https://gist.githubusercontent.com/your-username/abcdef123456/raw/abcdef123456/jana_kids_data.json"
+// مثال: "https://gist.githubusercontent.com/your-username/abcdef123456/raw/jana_kids_data.json"
 //
-const GIST_RAW_URL = "https://gist.githubusercontent.com/mohazard555/d6be309aba18145be395d6ee0bc7ca7a/raw/jana%2520kids_data.json"; 
+const GIST_RAW_URL = "https://gist.githubusercontent.com/mohazard555/d6be309aba18145be395d6ee0bc7ca7a/raw/jana_kids_data.json"; 
 //
 // ====================================================================================
 
@@ -82,6 +83,7 @@ const App: React.FC = () => {
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingError, setLoadingError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -138,13 +140,13 @@ const App: React.FC = () => {
     setNewVideoIds(newIds);
   };
   
-  // Effect for initial data loading from the hardcoded GIST_RAW_URL.
-  // This is the single source of truth for all users.
+  // Effect for initial data loading from Gist with localStorage caching.
   useEffect(() => {
     const loadInitialData = async () => {
       setIsLoading(true);
+      setLoadingError(null); // Reset error state on every load attempt
 
-      // Load admin-specific settings from localStorage (credentials, token)
+      // Load admin-specific settings from localStorage
       const savedCredentials = localStorage.getItem('janaKidsCredentials');
       if (savedCredentials) {
         try { setCredentials(JSON.parse(savedCredentials)); } catch (e) { console.error("Could not parse credentials.", e); }
@@ -156,40 +158,58 @@ const App: React.FC = () => {
             setSyncSettings({ githubToken: settings.githubToken || '' });
         } catch(e) { console.error("Could not parse sync settings.", e); }
       }
+
+      // --- Optimized Loading Strategy ---
+      let initialDataLoaded = false;
+      const localDataRaw = localStorage.getItem('janaKidsContent');
       
-      // Main data loading logic. Prioritize the hardcoded remote Gist for all users.
-      if (GIST_RAW_URL) {
-        try {
-          const cacheBustedUrl = `${GIST_RAW_URL}?t=${Date.now()}`;
-          console.log(`Fetching initial data from: ${cacheBustedUrl}`);
-          const response = await fetch(cacheBustedUrl, { cache: 'no-store' });
-          
-          if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
-          
-          const data = await response.json();
-          console.log("Successfully fetched and applied data from Gist.", data);
-          setDataFromRemote(data);
-          localStorage.setItem('janaKidsContent', JSON.stringify(data)); // Update local cache
-        } catch (error) {
-          console.error("Failed to fetch from Gist, falling back to localStorage.", error);
-          setToastMessage({ text: 'فشل تحميل البيانات، عرض نسخة محفوظة.', type: 'error' });
-          
-          // Fallback to localStorage cache ONLY if Gist fetch fails.
-          const localDataRaw = localStorage.getItem('janaKidsContent');
-          if (localDataRaw) {
-            try {
-              console.log("Applying data from local storage cache.");
+      // 1. Attempt to load from localStorage for an instant UI
+      if (localDataRaw) {
+          try {
+              console.log("Applying data from localStorage cache for instant UI.");
               setDataFromRemote(JSON.parse(localDataRaw));
-            } catch (e) {
-              console.error("Could not parse local fallback data.", e);
-            }
+              initialDataLoaded = true;
+          } catch (e) {
+              console.error("Corrupt local data, removing.", e);
+              localStorage.removeItem('janaKidsContent');
           }
-        }
+      }
+
+      // 2. Always fetch from the network to get the latest version.
+      if (GIST_RAW_URL) {
+          try {
+              const response = await fetch(`${GIST_RAW_URL}?v=${new Date().getTime()}`);
+              if (!response.ok) throw new Error(`فشل الاتصال بالخادم (Status: ${response.status})`);
+              
+              const data = await response.json();
+              const newDataRaw = JSON.stringify(data);
+
+              if (newDataRaw !== localDataRaw) {
+                  console.log("Fetched new data from Gist. Updating state and localStorage.");
+                  setDataFromRemote(data);
+                  localStorage.setItem('janaKidsContent', newDataRaw);
+              } else {
+                  console.log("Fetched data is same as local cache. No update needed.");
+              }
+              initialDataLoaded = true; // Mark as loaded if fetch succeeds
+          } catch (error) {
+              console.error("Failed to fetch from Gist:", error);
+              const errorMessage = (error as Error).message || 'فشل تحميل البيانات، تأكد من اتصالك بالانترنت وحاول تحديث الصفحة.';
+              
+              if (!initialDataLoaded) {
+                  setLoadingError(errorMessage);
+              } else {
+                  setToastMessage({ text: 'فشل تحميل آخر التحديثات.', type: 'error' });
+              }
+          }
       } else {
-        // If no Gist URL is configured, we can't load anything.
-        console.warn("GIST_RAW_URL is not set in App.tsx. Cannot load data.");
+          console.warn("GIST_RAW_URL is not set in App.tsx. Cannot load data.");
+          if (!initialDataLoaded) {
+            setLoadingError("مصدر بيانات الموقع غير محدد في الكود. يرجى مراجعة المطور.");
+          }
       }
       
+      // No matter what happens, turn off the loading screen. The error screen will take over if needed.
       setIsLoading(false);
     };
 
@@ -572,6 +592,25 @@ const App: React.FC = () => {
     );
   }
 
+  if (loadingError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-800 p-8">
+          <div className="text-center max-w-2xl bg-white p-10 rounded-2xl shadow-2xl border-2 border-red-200">
+              <h1 className="text-4xl font-black mb-4">⚠️ حدث خطأ</h1>
+              <p className="text-lg mb-6">
+                  {loadingError}
+              </p>
+              <button 
+                onClick={() => window.location.reload()}
+                className="bg-red-500 text-white font-bold py-3 px-8 rounded-lg hover:bg-red-600 transition-colors duration-300 shadow-lg text-lg"
+              >
+                إعادة المحاولة
+              </button>
+          </div>
+      </div>
+    );
+  }
+
   if (!GIST_RAW_URL) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-800 p-8">
@@ -688,7 +727,7 @@ const App: React.FC = () => {
                         ? `لم نتمكن من العثور على أي فيديو يطابق "${searchQuery}".` 
                         : (isLoggedIn 
                             ? 'رائع! لنبدأ بإضافة أول فيديو لك من لوحة تحكم الأدمن في الأعلى.' 
-                            : 'يبدو أنه لم تتم إضافة أي فيديوهات حتى الآن. يرجى العودة لاحقاً لمشاهدة محتوى جديد!')
+                            : 'مرحباً بك في قناة جنى! نحن نجهز لكم فيديوهات جديدة وممتعة. عودوا لزيارتنا قريباً!')
                     }
                 </p>
             </div>
