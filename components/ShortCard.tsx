@@ -19,9 +19,9 @@ const ShortCard: React.FC<ShortCardProps> = ({ video, onWatchNowClick }) => {
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => onWatchNowClick(video.id)}
-      className="group relative flex-shrink-0 w-48 h-80 rounded-2xl shadow-lg overflow-hidden transform hover:-translate-y-2 transition-transform duration-300"
+      className="group relative flex-shrink-0 w-48 h-80 rounded-2xl shadow-lg overflow-hidden transform hover:-translate-y-2 transition-transform duration-300 bg-gray-200"
     >
-      <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" />
+      <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" loading="lazy" />
       <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
         <PlayIcon />
       </div>

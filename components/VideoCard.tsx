@@ -38,8 +38,8 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isAdmin, playlists, onAddT
     
   return (
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300 ease-in-out flex flex-col">
-      <div className="w-full aspect-[4/3] bg-black">
-        <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" />
+      <div className="w-full aspect-[4/3] bg-gray-200">
+        <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" loading="lazy" />
       </div>
       <div className="p-5 flex-grow flex flex-col">
         <h3 className="text-xl font-bold text-gray-800 h-16">{video.title}</h3>

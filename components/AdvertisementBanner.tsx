@@ -9,8 +9,8 @@ interface AdvertisementBannerProps {
 const AdvertisementBanner: React.FC<AdvertisementBannerProps> = ({ ad, onClose }) => {
   const content = (
     <>
-      <div className="flex-shrink-0 w-16 h-16 mr-4">
-        <img src={ad.imageUrl!} alt="Advertisement" className="w-full h-full object-cover rounded-md" />
+      <div className="flex-shrink-0 w-16 h-16 mr-4 bg-yellow-300 rounded-md">
+        <img src={ad.imageUrl!} alt="Advertisement" className="w-full h-full object-cover rounded-md" loading="lazy" />
       </div>
       <div className="flex-grow text-yellow-800">
         <p className="font-bold text-sm leading-tight">{ad.text}</p>

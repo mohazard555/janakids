@@ -41,7 +41,7 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, isAdmin, onDelete
         </button>
       )}
       <div className="w-full aspect-[3/4] bg-gray-100 p-4">
-        <img src={activity.imageUrl} alt={activity.title} className="w-full h-full object-contain" />
+        <img src={activity.imageUrl} alt={activity.title} className="w-full h-full object-contain" loading="lazy" />
       </div>
       <div className="p-5 flex-grow flex flex-col justify-between">
         <div>
