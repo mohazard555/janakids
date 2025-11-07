@@ -17,7 +17,8 @@ import Toast, { ToastMessage } from './components/Toast';
 import SearchBar from './components/SearchBar';
 import NotificationBell from './components/NotificationBell';
 import NotificationPanel from './components/NotificationPanel';
-import AdvertisementBanner from './components/AdvertisementBanner';
+import AdIcon from './components/AdIcon';
+import AdsPanel from './components/AdsPanel';
 import AdvertiserCta from './components/AdvertiserCta';
 import SyncIndicator from './components/SyncIndicator';
 import type { Video, Playlist, Activity, AdSettings, Ad } from './types';
@@ -91,8 +92,7 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [newVideoIds, setNewVideoIds] = useState<number[]>([]);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
-  const [isAdVisible, setIsAdVisible] = useState(true);
-  const [currentAd, setCurrentAd] = useState<Ad | null>(null);
+  const [showAdsPanel, setShowAdsPanel] = useState(false);
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
@@ -249,22 +249,6 @@ const App: React.FC = () => {
 
     loadInitialData();
   }, []); // Empty dependency array means this runs only once on mount.
-
-
-  // Effect to select a random ad to display
-  useEffect(() => {
-    if (adSettings.ads && adSettings.ads.length > 0) {
-      const activeAds = adSettings.ads.filter(ad => ad.imageUrl);
-      if (activeAds.length > 0) {
-        const randomIndex = Math.floor(Math.random() * activeAds.length);
-        setCurrentAd(activeAds[randomIndex]);
-      } else {
-        setCurrentAd(null);
-      }
-    } else {
-      setCurrentAd(null);
-    }
-  }, [adSettings.ads]);
 
 
   // Effect for syncing data to Gist on change (debounced)
@@ -674,6 +658,10 @@ const App: React.FC = () => {
       }
   };
 
+  const handleToggleAdsPanel = () => {
+    setShowAdsPanel(prev => !prev);
+  };
+
   const videosToDisplay = (selectedPlaylistId === 'all' 
     ? videos 
     : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id))
@@ -682,6 +670,9 @@ const App: React.FC = () => {
   );
 
   const newVideosList = videos.filter(v => newVideoIds.includes(v.id));
+
+  const validAds = adSettings.ads.filter(ad => ad.imageUrl);
+
 
   if (isLoading) {
     return (
@@ -756,9 +747,18 @@ const App: React.FC = () => {
         subscriptionUrl={subscriptionUrl}
       />
       <main className="container mx-auto px-4 py-10">
-        <div className="my-8 flex justify-between items-center relative">
+        <div className="my-8 flex justify-between items-center gap-4 relative">
             <SearchBar query={searchQuery} onQueryChange={setSearchQuery} />
-            <NotificationBell count={newVideoIds.length} onClick={handleToggleNotifications} />
+             <div className="flex items-center flex-shrink-0">
+                <AdIcon count={validAds.length} onClick={handleToggleAdsPanel} />
+                <NotificationBell count={newVideoIds.length} onClick={handleToggleNotifications} />
+            </div>
+            {showAdsPanel && (
+                <AdsPanel
+                    ads={validAds}
+                    onClose={() => setShowAdsPanel(false)}
+                />
+            )}
             {showNotificationsPanel && (
               <NotificationPanel 
                 newVideos={newVideosList}
@@ -842,10 +842,6 @@ const App: React.FC = () => {
           )}
         </div>
       </main>
-
-      {currentAd && isAdVisible && (
-        <AdvertisementBanner ad={currentAd} onClose={() => setIsAdVisible(false)} />
-      )}
 
       {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}
       
