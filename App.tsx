@@ -129,31 +129,8 @@ const App: React.FC = () => {
     setBaseVideos(loadedVideos);
     setBaseShorts(loadedShorts);
 
-    let videosWithLocal = [...loadedVideos];
-    let shortsWithLocal = [...loadedShorts];
-
-    const unsyncedViewsRaw = localStorage.getItem('janaKidsUnsyncedViews');
-    if (unsyncedViewsRaw) {
-        try {
-            const unsyncedViews: { [key: number]: number } = JSON.parse(unsyncedViewsRaw);
-            
-            if (Object.keys(unsyncedViews).length > 0) {
-                console.log("Applying locally stored view counts for persistence:", unsyncedViews);
-                const applyViews = (videoList: Video[]) => videoList.map(video => 
-                    unsyncedViews[video.id] 
-                    ? { ...video, views: (video.views || 0) + unsyncedViews[video.id] } 
-                    : video
-                );
-                videosWithLocal = applyViews(videosWithLocal);
-                shortsWithLocal = applyViews(shortsWithLocal);
-            }
-        } catch (e) {
-            console.error("Could not parse or apply unsynced views on load.", e);
-        }
-    }
-
-    setVideos(videosWithLocal);
-    setShorts(shortsWithLocal);
+    setVideos(loadedVideos);
+    setShorts(loadedShorts);
     setActivities(data.activities ?? []);
     setChannelLogo(data.channelLogo ?? null);
     setPlaylists(data.playlists ?? []);
@@ -532,63 +509,29 @@ const App: React.FC = () => {
     reader.readAsDataURL(data.imageFile);
   };
   
-  const applyUnsyncedViews = () => {
-    const unsyncedViewsRaw = localStorage.getItem('janaKidsUnsyncedViews');
-    if (unsyncedViewsRaw) {
-      try {
-        const unsyncedViews: { [key: number]: number } = JSON.parse(unsyncedViewsRaw);
-        
-        if (Object.keys(unsyncedViews).length > 0) {
-          console.log("Applying and committing unsynced view counts from visitors:", unsyncedViews);
-
-          const updateViews = (videoList: Video[]) => {
-            return videoList.map(video => {
-              if (unsyncedViews[video.id]) {
-                const newViews = (video.views || 0) + unsyncedViews[video.id];
-                console.log(`Committing video ${video.id} views from ${video.views} to ${newViews}`);
-                return { ...video, views: newViews };
-              }
-              return video;
-            });
-          };
-
-          setVideos(updateViews(baseVideos));
-          setShorts(updateViews(baseShorts));
-          setBaseVideos(updateViews(baseVideos));
-          setBaseShorts(updateViews(baseShorts));
-
-          localStorage.removeItem('janaKidsUnsyncedViews');
-          setToastMessage({ text: 'تمت مزامنة مشاهدات الزوار.', type: 'success' });
-        }
-      } catch (e) {
-        console.error("Could not parse or apply unsynced views for commit.", e);
-        localStorage.removeItem('janaKidsUnsyncedViews'); // Clear corrupt data
-      }
-    }
-  };
-
   const handleIncrementViewCount = (videoId: number) => {
-    // 1. Update React state for immediate UI feedback for the current user.
+    const watchedVideosKey = 'janaKidsWatchedVideos';
+    const watchedVideosRaw = localStorage.getItem(watchedVideosKey);
+    const watchedVideos: number[] = watchedVideosRaw ? JSON.parse(watchedVideosRaw) : [];
+
+    if (watchedVideos.includes(videoId)) {
+      return; // This user/browser has already watched this video. Do not count again.
+    }
+
+    // A new unique view has occurred. Record it in local storage to prevent this user from incrementing again.
+    watchedVideos.push(videoId);
+    localStorage.setItem(watchedVideosKey, JSON.stringify(watchedVideos));
+
+    // To provide immediate feedback, we optimistically update the UI for the current user.
     const increment = (list: Video[]) => list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
     setVideos(increment);
     setShorts(increment);
 
-    // 2. If not logged in as admin, store the view increment locally. It will be synced when an admin logs in next.
-    if (!isLoggedIn) {
-        try {
-            const unsyncedViewsRaw = localStorage.getItem('janaKidsUnsyncedViews');
-            const unsyncedViews: { [key: number]: number } = unsyncedViewsRaw ? JSON.parse(unsyncedViewsRaw) : {};
-            
-            unsyncedViews[videoId] = (unsyncedViews[videoId] || 0) + 1;
-
-            localStorage.setItem('janaKidsUnsyncedViews', JSON.stringify(unsyncedViews));
-        } catch (e) {
-            console.error("Could not save unsynced view for later.", e);
-        }
-    } else {
-        // If admin is logged in, update the base state as well to ensure sync is correct
-        setBaseVideos(increment);
-        setBaseShorts(increment);
+    // However, to ensure the view count is consistent and saved for all visitors,
+    // the "official" master count is only updated when an admin is logged in.
+    if (isLoggedIn) {
+      setBaseVideos(increment);
+      setBaseShorts(increment);
     }
   };
 
@@ -608,8 +551,6 @@ const App: React.FC = () => {
   
   const handleLogin = (user: string, pass: string): boolean => {
     if (user === credentials.username && pass === credentials.password) {
-      applyUnsyncedViews();
-      
       setIsLoggedIn(true);
       setShowLoginModal(false);
       return true;
