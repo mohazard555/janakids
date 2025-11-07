@@ -70,6 +70,8 @@ const App: React.FC = () => {
   // Content State
   const [videos, setVideos] = useState<Video[]>([]);
   const [shorts, setShorts] = useState<Video[]>([]);
+  const [baseVideos, setBaseVideos] = useState<Video[]>([]);
+  const [baseShorts, setBaseShorts] = useState<Video[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [channelLogo, setChannelLogo] = useState<string | null>(null);
@@ -122,8 +124,36 @@ const App: React.FC = () => {
 
   const setDataFromRemote = (data: any) => {
     const loadedVideos = data.videos ?? [];
-    setVideos(loadedVideos);
-    setShorts(data.shorts ?? []);
+    const loadedShorts = data.shorts ?? [];
+
+    setBaseVideos(loadedVideos);
+    setBaseShorts(loadedShorts);
+
+    let videosWithLocal = [...loadedVideos];
+    let shortsWithLocal = [...loadedShorts];
+
+    const unsyncedViewsRaw = localStorage.getItem('janaKidsUnsyncedViews');
+    if (unsyncedViewsRaw) {
+        try {
+            const unsyncedViews: { [key: number]: number } = JSON.parse(unsyncedViewsRaw);
+            
+            if (Object.keys(unsyncedViews).length > 0) {
+                console.log("Applying locally stored view counts for persistence:", unsyncedViews);
+                const applyViews = (videoList: Video[]) => videoList.map(video => 
+                    unsyncedViews[video.id] 
+                    ? { ...video, views: (video.views || 0) + unsyncedViews[video.id] } 
+                    : video
+                );
+                videosWithLocal = applyViews(videosWithLocal);
+                shortsWithLocal = applyViews(shortsWithLocal);
+            }
+        } catch (e) {
+            console.error("Could not parse or apply unsynced views on load.", e);
+        }
+    }
+
+    setVideos(videosWithLocal);
+    setShorts(shortsWithLocal);
     setActivities(data.activities ?? []);
     setChannelLogo(data.channelLogo ?? null);
     setPlaylists(data.playlists ?? []);
@@ -188,6 +218,10 @@ const App: React.FC = () => {
                   console.log("Fetched new data from Gist. Updating state and localStorage.");
                   setDataFromRemote(data);
                   localStorage.setItem('janaKidsContent', newDataRaw);
+              } else if (!initialDataLoaded) {
+                  // If cache was empty or corrupt, but fetched data matches nothing, still load it.
+                  console.log("Local cache was empty, applying fetched data.");
+                  setDataFromRemote(data);
               } else {
                   console.log("Fetched data is same as local cache. No update needed.");
               }
@@ -254,8 +288,8 @@ const App: React.FC = () => {
         console.log(`Starting automatic sync for Gist ID: ${gistId}.`);
         
         const contentToSync = {
-            videos,
-            shorts,
+            videos: baseVideos, // Always sync the base data
+            shorts: baseShorts, // Always sync the base data
             activities,
             channelLogo,
             playlists,
@@ -264,6 +298,11 @@ const App: React.FC = () => {
             adSettings,
         };
         
+        // Update the base data with the latest view counts before syncing
+        contentToSync.videos = videos.map(v => ({...v, views: v.views}));
+        contentToSync.shorts = shorts.map(s => ({...s, views: s.views}));
+
+
         localStorage.setItem('janaKidsContent', JSON.stringify(contentToSync));
 
         const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
@@ -329,7 +368,7 @@ const App: React.FC = () => {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings, baseVideos, baseShorts]);
 
 
   useEffect(() => {
@@ -474,6 +513,7 @@ const App: React.FC = () => {
       views: 0,
     };
     setVideos(prev => [newVideo, ...prev]);
+    setBaseVideos(prev => [newVideo, ...prev]);
     setNewVideoIds(prev => [newVideo.id, ...prev]);
   };
 
@@ -491,6 +531,7 @@ const App: React.FC = () => {
       views: 0,
     };
     setShorts(prev => [newShort, ...prev]);
+    setBaseShorts(prev => [newShort, ...prev]);
   };
 
   const handleAddActivity = (data: { title: string; description: string; imageFile: File }) => {
@@ -514,27 +555,29 @@ const App: React.FC = () => {
         const unsyncedViews: { [key: number]: number } = JSON.parse(unsyncedViewsRaw);
         
         if (Object.keys(unsyncedViews).length > 0) {
-          console.log("Applying unsynced view counts from visitors:", unsyncedViews);
+          console.log("Applying and committing unsynced view counts from visitors:", unsyncedViews);
 
           const updateViews = (videoList: Video[]) => {
             return videoList.map(video => {
               if (unsyncedViews[video.id]) {
                 const newViews = (video.views || 0) + unsyncedViews[video.id];
-                console.log(`Updating video ${video.id} from ${video.views} to ${newViews}`);
+                console.log(`Committing video ${video.id} views from ${video.views} to ${newViews}`);
                 return { ...video, views: newViews };
               }
               return video;
             });
           };
 
-          setVideos(prevVideos => updateViews(prevVideos));
-          setShorts(prevShorts => updateViews(prevShorts));
+          setVideos(updateViews(baseVideos));
+          setShorts(updateViews(baseShorts));
+          setBaseVideos(updateViews(baseVideos));
+          setBaseShorts(updateViews(baseShorts));
 
           localStorage.removeItem('janaKidsUnsyncedViews');
           setToastMessage({ text: 'تمت مزامنة مشاهدات الزوار.', type: 'success' });
         }
       } catch (e) {
-        console.error("Could not parse or apply unsynced views.", e);
+        console.error("Could not parse or apply unsynced views for commit.", e);
         localStorage.removeItem('janaKidsUnsyncedViews'); // Clear corrupt data
       }
     }
@@ -558,9 +601,11 @@ const App: React.FC = () => {
         } catch (e) {
             console.error("Could not save unsynced view for later.", e);
         }
+    } else {
+        // If admin is logged in, update the base state as well to ensure sync is correct
+        setBaseVideos(increment);
+        setBaseShorts(increment);
     }
-    // If an admin is logged in, their view is already counted in the state update above, 
-    // and the existing sync useEffect will handle saving it to the Gist automatically.
   };
 
   const handleCreatePlaylist = (name: string) => {
@@ -579,7 +624,6 @@ const App: React.FC = () => {
   
   const handleLogin = (user: string, pass: string): boolean => {
     if (user === credentials.username && pass === credentials.password) {
-      // Before logging in, apply any pending view counts from this browser session.
       applyUnsyncedViews();
       
       setIsLoggedIn(true);
@@ -592,6 +636,8 @@ const App: React.FC = () => {
   const handleDeleteVideo = (videoId: number) => {
     setVideos(prev => prev.filter(v => v.id !== videoId));
     setShorts(prev => prev.filter(s => s.id !== videoId));
+    setBaseVideos(prev => prev.filter(v => v.id !== videoId));
+    setBaseShorts(prev => prev.filter(s => s.id !== videoId));
     setPlaylists(prev => prev.map(p => ({ ...p, videoIds: p.videoIds.filter(id => id !== videoId) })));
   };
 
@@ -609,6 +655,8 @@ const App: React.FC = () => {
     const updater = (list: Video[]) => list.map(v => v.id === updatedData.id ? { ...v, ...updatedData, thumbnailUrl } : v);
     setVideos(updater);
     setShorts(updater);
+    setBaseVideos(updater);
+    setBaseShorts(updater);
     setEditingVideo(null);
   };
 
