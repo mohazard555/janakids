@@ -556,7 +556,7 @@ const App: React.FC = () => {
     reader.readAsDataURL(data.imageFile);
   };
   
-  const handleIncrementViewCount = (videoId: number) => {
+  const handleIncrementViewCount = async (videoId: number) => {
     const watchedVideosKey = 'janaKidsWatchedVideos';
     const watchedVideosRaw = localStorage.getItem(watchedVideosKey);
     const watchedVideos: number[] = watchedVideosRaw ? JSON.parse(watchedVideosRaw) : [];
@@ -566,19 +566,51 @@ const App: React.FC = () => {
         watchedVideos.push(videoId);
         localStorage.setItem(watchedVideosKey, JSON.stringify(watchedVideos));
 
-        // Send a request to the central counter. This is a "fire-and-forget" request.
+        const updateStateWithNewCount = (list: Video[], newCount: number) =>
+            list.map(v => v.id === videoId ? { ...v, views: newCount } : v);
+        
+        const fallbackIncrement = (list: Video[]) =>
+            list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
+
         if (COUNTER_NAMESPACE) {
-            fetch(`https://api.countapi.xyz/hit/${COUNTER_NAMESPACE}/item-${videoId}`)
-              .catch(e => console.warn("Failed to log view count to central service", e));
+            try {
+                // First, send a request to increment the counter. We don't need to parse the response.
+                const hitResponse = await fetch(`https://api.countapi.xyz/hit/${COUNTER_NAMESPACE}/item-${videoId}`);
+                if (!hitResponse.ok) {
+                    throw new Error('Count API "hit" request failed');
+                }
+
+                // To ensure we show the most accurate global count, we now fetch the new total.
+                // This is more reliable than just trusting the response from the 'hit' endpoint.
+                const getResponse = await fetch(`https://api.countapi.xyz/get/${COUNTER_NAMESPACE}/item-${videoId}`);
+                if (!getResponse.ok) {
+                    throw new Error('Count API "get" request failed after a successful "hit"');
+                }
+                
+                const data = await getResponse.json();
+                const newTotalViews = data.value;
+
+                if (typeof newTotalViews === 'number') {
+                    setVideos(prev => updateStateWithNewCount(prev, newTotalViews));
+                    setShorts(prev => updateStateWithNewCount(prev, newTotalViews));
+                    setBaseVideos(prev => updateStateWithNewCount(prev, newTotalViews));
+                    setBaseShorts(prev => updateStateWithNewCount(prev, newTotalViews));
+                } else {
+                    throw new Error('Invalid Count API "get" response, value is not a number');
+                }
+            } catch (e) {
+                console.warn("Failed to update and get view count from API, falling back to local increment.", e);
+                setVideos(prev => fallbackIncrement(prev));
+                setShorts(prev => fallbackIncrement(prev));
+                setBaseVideos(prev => fallbackIncrement(prev));
+                setBaseShorts(prev => fallbackIncrement(prev));
+            }
+        } else {
+            setVideos(prev => fallbackIncrement(prev));
+            setShorts(prev => fallbackIncrement(prev));
+            setBaseVideos(prev => fallbackIncrement(prev));
+            setBaseShorts(prev => fallbackIncrement(prev));
         }
-        
-        // Update the local state immediately for instant UI feedback.
-        const increment = (list: Video[]) => list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
-        
-        setVideos(prev => increment(prev));
-        setShorts(prev => increment(prev));
-        setBaseVideos(prev => increment(prev));
-        setBaseShorts(prev => increment(prev));
     }
   };
 
