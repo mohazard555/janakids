@@ -60,6 +60,11 @@ const getGistId = (url: string): string | null => {
     return match ? match[1] : null;
 };
 
+const GIST_ID = getGistId(GIST_RAW_URL);
+// Using a unique namespace for the central view counter based on the Gist ID
+const COUNTER_NAMESPACE = GIST_ID ? `janakids-${GIST_ID}` : null;
+
+
 const App: React.FC = () => {
   const defaultAdSettings: AdSettings = { 
     ads: [],
@@ -192,7 +197,35 @@ const App: React.FC = () => {
               
               const remoteData = await response.json();
 
-              // Merge locally incremented view counts with the official data from Gist.
+              // Fetch live view counts from central counter service
+              if (COUNTER_NAMESPACE) {
+                  try {
+                      console.log("Fetching live view counts...");
+                      const fetchCounts = async (items: Video[]) => {
+                          const promises = items.map(item =>
+                              fetch(`https://api.countapi.xyz/get/${COUNTER_NAMESPACE}/item-${item.id}`)
+                                  .then(res => res.ok ? res.json() : { value: 0 })
+                                  .then(data => ({ id: item.id, views: data.value || 0 }))
+                                  .catch(() => ({ id: item.id, views: 0 }))
+                          );
+                          const results = await Promise.all(promises);
+                          const viewsMap = new Map(results.map(r => [r.id, r.views]));
+                          return items.map(item => ({
+                              ...item,
+                              views: Math.max(item.views || 0, viewsMap.get(item.id) || 0),
+                          }));
+                      };
+                      
+                      remoteData.videos = await fetchCounts(remoteData.videos || []);
+                      remoteData.shorts = await fetchCounts(remoteData.shorts || []);
+                      console.log("Live view counts merged.");
+
+                  } catch (e) {
+                      console.warn("Could not fetch live view counts, using Gist data as fallback.", e);
+                  }
+              }
+
+              // Merge locally incremented view counts with the official data.
               if (localData) {
                 const mergeViews = (remoteList: Video[] = [], localList: Video[] = []) => {
                     const localViewsMap = new Map(localList.map(v => [v.id, v.views]));
@@ -207,13 +240,11 @@ const App: React.FC = () => {
               
               const mergedDataRaw = JSON.stringify(remoteData);
 
-              if (mergedDataRaw !== localDataRaw) {
-                  console.log("Fetched new data from Gist and merged local changes. Updating state and localStorage.");
+              // Update state only if there's new data or it's the very first load
+              if (mergedDataRaw !== localDataRaw || !initialDataLoaded) {
+                  console.log("Applying new/updated data.");
                   setDataFromRemote(remoteData);
                   localStorage.setItem('janaKidsContent', mergedDataRaw);
-              } else if (!initialDataLoaded) {
-                  console.log("Local cache was empty, applying fetched data.");
-                  setDataFromRemote(remoteData);
               } else {
                   console.log("Fetched data is same as local cache. No update needed.");
               }
@@ -260,7 +291,6 @@ const App: React.FC = () => {
     };
 
     // Always save the latest state to local cache for persistence immediately.
-    // This captures view counts from non-admins and persists them between sessions.
     localStorage.setItem('janaKidsContent', JSON.stringify(contentToSync));
 
     // Clear any pending Gist sync
@@ -268,7 +298,7 @@ const App: React.FC = () => {
       clearTimeout(syncTimerRef.current);
     }
 
-    // If not logged in as admin, stop here. Data is saved locally.
+    // If not logged in as admin, stop here.
     if (!isLoggedIn || !GIST_RAW_URL || !syncSettings.githubToken) {
       return;
     }
@@ -531,19 +561,25 @@ const App: React.FC = () => {
     const watchedVideosRaw = localStorage.getItem(watchedVideosKey);
     const watchedVideos: number[] = watchedVideosRaw ? JSON.parse(watchedVideosRaw) : [];
 
-    if (watchedVideos.includes(videoId)) {
-      return; // This user/browser has already watched this video. Do not count again.
+    // Only count the view if this browser hasn't watched the video before.
+    if (!watchedVideos.includes(videoId)) {
+        watchedVideos.push(videoId);
+        localStorage.setItem(watchedVideosKey, JSON.stringify(watchedVideos));
+
+        // Send a request to the central counter. This is a "fire-and-forget" request.
+        if (COUNTER_NAMESPACE) {
+            fetch(`https://api.countapi.xyz/hit/${COUNTER_NAMESPACE}/item-${videoId}`)
+              .catch(e => console.warn("Failed to log view count to central service", e));
+        }
+        
+        // Update the local state immediately for instant UI feedback.
+        const increment = (list: Video[]) => list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
+        
+        setVideos(prev => increment(prev));
+        setShorts(prev => increment(prev));
+        setBaseVideos(prev => increment(prev));
+        setBaseShorts(prev => increment(prev));
     }
-
-    watchedVideos.push(videoId);
-    localStorage.setItem(watchedVideosKey, JSON.stringify(watchedVideos));
-
-    const increment = (list: Video[]) => list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
-    
-    setVideos(increment);
-    setShorts(increment);
-    setBaseVideos(increment);
-    setBaseShorts(increment);
   };
 
   const handleCreatePlaylist = (name: string) => {
@@ -607,6 +643,10 @@ const App: React.FC = () => {
 
   const handleToggleAdsPanel = () => {
     setShowAdsPanel(prev => !prev);
+  };
+
+  const handleAdSettingsChange = (newSettings: AdSettings) => {
+    setAdSettings(newSettings);
   };
 
   const videosToDisplay = (selectedPlaylistId === 'all' 
@@ -731,7 +771,7 @@ const App: React.FC = () => {
                         currentSubscriptionUrl={subscriptionUrl}
                         onConfigureAndSync={handleConfigureAndSync}
                         currentSyncSettings={syncSettings}
-                        onAdSettingsChange={setAdSettings}
+                        onAdSettingsChange={handleAdSettingsChange}
                         currentAdSettings={adSettings}
                         onExportData={handleExportData}
                         onImportData={handleImportData}
