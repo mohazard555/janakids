@@ -169,12 +169,14 @@ const App: React.FC = () => {
       // --- Optimized Loading Strategy ---
       let initialDataLoaded = false;
       const localDataRaw = localStorage.getItem('janaKidsContent');
+      let localData: any = null;
       
       // 1. Attempt to load from localStorage for an instant UI
       if (localDataRaw) {
           try {
               console.log("Applying data from localStorage cache for instant UI.");
-              setDataFromRemote(JSON.parse(localDataRaw));
+              localData = JSON.parse(localDataRaw);
+              setDataFromRemote(localData);
               initialDataLoaded = true;
           } catch (e) {
               console.error("Corrupt local data, removing.", e);
@@ -188,21 +190,34 @@ const App: React.FC = () => {
               const response = await fetch(`${GIST_RAW_URL}?v=${new Date().getTime()}`);
               if (!response.ok) throw new Error(`فشل الاتصال بالخادم (Status: ${response.status})`);
               
-              const data = await response.json();
-              const newDataRaw = JSON.stringify(data);
+              const remoteData = await response.json();
 
-              if (newDataRaw !== localDataRaw) {
-                  console.log("Fetched new data from Gist. Updating state and localStorage.");
-                  setDataFromRemote(data);
-                  localStorage.setItem('janaKidsContent', newDataRaw);
+              // Merge locally incremented view counts with the official data from Gist.
+              if (localData) {
+                const mergeViews = (remoteList: Video[] = [], localList: Video[] = []) => {
+                    const localViewsMap = new Map(localList.map(v => [v.id, v.views]));
+                    return remoteList.map(remoteVideo => ({
+                        ...remoteVideo,
+                        views: Math.max(remoteVideo.views || 0, localViewsMap.get(remoteVideo.id) || 0),
+                    }));
+                };
+                remoteData.videos = mergeViews(remoteData.videos, localData.videos);
+                remoteData.shorts = mergeViews(remoteData.shorts, localData.shorts);
+              }
+              
+              const mergedDataRaw = JSON.stringify(remoteData);
+
+              if (mergedDataRaw !== localDataRaw) {
+                  console.log("Fetched new data from Gist and merged local changes. Updating state and localStorage.");
+                  setDataFromRemote(remoteData);
+                  localStorage.setItem('janaKidsContent', mergedDataRaw);
               } else if (!initialDataLoaded) {
-                  // If cache was empty or corrupt, but fetched data matches nothing, still load it.
                   console.log("Local cache was empty, applying fetched data.");
-                  setDataFromRemote(data);
+                  setDataFromRemote(remoteData);
               } else {
                   console.log("Fetched data is same as local cache. No update needed.");
               }
-              initialDataLoaded = true; // Mark as loaded if fetch succeeds
+              initialDataLoaded = true;
           } catch (error) {
               console.error("Failed to fetch from Gist:", error);
               const errorMessage = (error as Error).message || 'فشل تحميل البيانات، تأكد من اتصالك بالانترنت وحاول تحديث الصفحة.';
@@ -220,24 +235,45 @@ const App: React.FC = () => {
           }
       }
       
-      // No matter what happens, turn off the loading screen. The error screen will take over if needed.
       setIsLoading(false);
     };
 
     loadInitialData();
-  }, []); // Empty dependency array means this runs only once on mount.
+  }, []);
 
 
-  // Effect for syncing data to Gist on change (debounced)
+  // Effect for syncing data to localStorage and Gist
   useEffect(() => {
-    if (isLoading || !isLoggedIn || !GIST_RAW_URL || !syncSettings.githubToken) {
+    if (isLoading) {
       return;
     }
 
+    const contentToSync = {
+        videos: baseVideos,
+        shorts: baseShorts,
+        activities,
+        channelLogo,
+        playlists,
+        channelDescription,
+        subscriptionUrl,
+        adSettings,
+    };
+
+    // Always save the latest state to local cache for persistence immediately.
+    // This captures view counts from non-admins and persists them between sessions.
+    localStorage.setItem('janaKidsContent', JSON.stringify(contentToSync));
+
+    // Clear any pending Gist sync
     if (syncTimerRef.current) {
       clearTimeout(syncTimerRef.current);
     }
 
+    // If not logged in as admin, stop here. Data is saved locally.
+    if (!isLoggedIn || !GIST_RAW_URL || !syncSettings.githubToken) {
+      return;
+    }
+
+    // Proceed with debounced Gist synchronization for admin
     syncTimerRef.current = window.setTimeout(async () => {
       setIsSyncing(true);
       try {
@@ -245,35 +281,16 @@ const App: React.FC = () => {
         if (!gistId) {
           throw new Error("رابط Gist المحدد في الكود غير صالح. لا يمكن المزامنة.");
         }
-
+        
         console.log(`Starting automatic sync for Gist ID: ${gistId}.`);
-        
-        const contentToSync = {
-            videos: baseVideos, // Always sync the base data
-            shorts: baseShorts, // Always sync the base data
-            activities,
-            channelLogo,
-            playlists,
-            channelDescription,
-            subscriptionUrl,
-            adSettings,
-        };
-        
-        // Update the base data with the latest view counts before syncing
-        contentToSync.videos = videos.map(v => ({...v, views: v.views}));
-        contentToSync.shorts = shorts.map(s => ({...s, views: s.views}));
-
-
-        localStorage.setItem('janaKidsContent', JSON.stringify(contentToSync));
 
         const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
         const AUTH_HEADERS = {
             'Authorization': `token ${syncSettings.githubToken}`,
             'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json',
         };
         
-        const metaResponse = await fetch(GIST_API_URL, { headers: { 'Authorization': `token ${syncSettings.githubToken}`, 'Accept': 'application/vnd.github.v3+json' } });
+        const metaResponse = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
         if (!metaResponse.ok) {
             const status = metaResponse.status;
             if (status === 404) throw new Error('فشل جلب Gist: لم يتم العثور عليه. يرجى التحقق من الرابط.');
@@ -297,7 +314,7 @@ const App: React.FC = () => {
         
         const patchResponse = await fetch(GIST_API_URL, {
           method: 'PATCH',
-          headers: AUTH_HEADERS,
+          headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             description: "Jana Kids Channel Data",
             files: filesToPatch,
@@ -329,7 +346,7 @@ const App: React.FC = () => {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings, baseVideos, baseShorts]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings, baseVideos, baseShorts, isLoggedIn, isLoading]);
 
 
   useEffect(() => {
@@ -518,21 +535,15 @@ const App: React.FC = () => {
       return; // This user/browser has already watched this video. Do not count again.
     }
 
-    // A new unique view has occurred. Record it in local storage to prevent this user from incrementing again.
     watchedVideos.push(videoId);
     localStorage.setItem(watchedVideosKey, JSON.stringify(watchedVideos));
 
-    // To provide immediate feedback, we optimistically update the UI for the current user.
     const increment = (list: Video[]) => list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
+    
     setVideos(increment);
     setShorts(increment);
-
-    // However, to ensure the view count is consistent and saved for all visitors,
-    // the "official" master count is only updated when an admin is logged in.
-    if (isLoggedIn) {
-      setBaseVideos(increment);
-      setBaseShorts(increment);
-    }
+    setBaseVideos(increment);
+    setBaseShorts(increment);
   };
 
   const handleCreatePlaylist = (name: string) => {

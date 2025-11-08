@@ -100,16 +100,16 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
             setIsTesting(false);
         }
     };
-
-    const handleSaveAllAdSettings = (e: React.FormEvent) => {
-        e.preventDefault();
+    
+    const propagateAdSettingsChange = (newSettings: Partial<AdSettings>) => {
         onAdSettingsChange({
             ads: localAds,
-            ctaEnabled,
-            ctaText,
-            ctaLink
+            ctaEnabled: ctaEnabled,
+            ctaText: ctaText,
+            ctaLink: ctaLink,
+            ...newSettings
         });
-    };
+    }
 
     const resetAdForm = () => {
         setEditingAd(null);
@@ -131,7 +131,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
 
     const handleDeleteAd = (id: number) => {
         if (window.confirm('هل أنت متأكد من حذف هذا الإعلان؟')) {
-            setLocalAds(prev => prev.filter(ad => ad.id !== id));
+            const updatedAds = localAds.filter(ad => ad.id !== id)
+            setLocalAds(updatedAds);
+            propagateAdSettingsChange({ ads: updatedAds });
         }
     };
     
@@ -142,9 +144,10 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         }
 
         const processAd = (imageUrl: string | null) => {
+            let updatedAds;
             if (editingAd) {
                 const updatedAd = { ...editingAd, text: adText, link: adLink, imageUrl: imageUrl };
-                setLocalAds(prev => prev.map(ad => ad.id === editingAd.id ? updatedAd : ad));
+                updatedAds = localAds.map(ad => ad.id === editingAd.id ? updatedAd : ad);
             } else {
                 const newAd: Ad = {
                     id: Date.now(),
@@ -152,8 +155,10 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                     link: adLink,
                     imageUrl: imageUrl
                 };
-                setLocalAds(prev => [...prev, newAd]);
+                updatedAds = [...localAds, newAd];
             }
+            setLocalAds(updatedAds);
+            propagateAdSettingsChange({ ads: updatedAds });
             resetAdForm();
         };
 
@@ -166,6 +171,24 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         } else {
             processAd(editingAd?.imageUrl || null);
         }
+    };
+    
+    const handleCtaEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newCtaEnabled = e.target.checked;
+        setCtaEnabled(newCtaEnabled);
+        propagateAdSettingsChange({ ctaEnabled: newCtaEnabled });
+    };
+
+    const handleCtaTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newCtaText = e.target.value;
+        setCtaText(newCtaText);
+        propagateAdSettingsChange({ ctaText: newCtaText });
+    };
+
+    const handleCtaLinkChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newCtaLink = e.target.value;
+        setCtaLink(newCtaLink);
+        propagateAdSettingsChange({ ctaLink: newCtaLink });
     };
 
     const handleImportClick = () => {
@@ -213,8 +236,8 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                     </button>
                 </form>
 
-                <form onSubmit={handleSaveAllAdSettings} className="pt-6 border-t-2 border-dashed border-gray-200">
-                    <h3 className="text-xl font-bold text-center text-yellow-700 mb-4">إدارة الإعلانات</h3>
+                <div className="pt-6 border-t-2 border-dashed border-gray-200">
+                    <h3 className="text-xl font-bold text-center text-yellow-700 mb-4">إدارة الإعلانات (يتم الحفظ تلقائياً)</h3>
                     
                     <fieldset className="border border-gray-300 p-4 rounded-lg mb-4">
                         <legend className="px-2 font-semibold text-yellow-800">الإعلانات الرئيسية</legend>
@@ -264,22 +287,18 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                         <legend className="px-2 font-semibold text-green-800">أيقونة "أعلن معنا"</legend>
                         <div className="flex items-center justify-center mb-4">
                             <label htmlFor="cta-enabled" className="text-gray-700 font-semibold ml-3">تفعيل الأيقونة</label>
-                            <input id="cta-enabled" type="checkbox" checked={ctaEnabled} onChange={(e) => setCtaEnabled(e.target.checked)} className="w-6 h-6 rounded text-green-500 focus:ring-green-400"/>
+                            <input id="cta-enabled" type="checkbox" checked={ctaEnabled} onChange={handleCtaEnabledChange} className="w-6 h-6 rounded text-green-500 focus:ring-green-400"/>
                         </div>
                          <div>
                             <label htmlFor="cta-text" className="block text-right text-gray-700 font-semibold mb-1">نص الأيقونة</label>
-                            <input id="cta-text" type="text" value={ctaText} onChange={(e) => setCtaText(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" />
+                            <input id="cta-text" type="text" value={ctaText} onChange={handleCtaTextChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" />
                         </div>
                          <div>
                             <label htmlFor="cta-link" className="block text-right text-gray-700 font-semibold mb-1">رابط (اختياري)</label>
-                            <input id="cta-link" type="url" value={ctaLink} onChange={(e) => setCtaLink(e.target.value)} placeholder="https://example.com/advertise" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" dir="ltr" />
+                            <input id="cta-link" type="url" value={ctaLink} onChange={handleCtaLinkChange} placeholder="https://example.com/advertise" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" dir="ltr" />
                         </div>
                     </fieldset>
-
-                    <button type="submit" className="w-full bg-yellow-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-yellow-600 transition-colors duration-300 shadow-lg text-md">
-                        حفظ كل إعدادات الإعلانات
-                    </button>
-                </form>
+                </div>
             </div>
             
             <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-200">
