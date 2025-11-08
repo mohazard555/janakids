@@ -596,11 +596,6 @@ const App: React.FC = () => {
     setEditingVideo(null);
   };
 
-   const handleAdSettingsChange = (newSettings: AdSettings) => {
-    setAdSettings(newSettings);
-    setToastMessage({ text: 'تم تحديث إعدادات الإعلان بنجاح!', type: 'success' });
-  };
-
   const handleToggleNotifications = () => {
       setShowNotificationsPanel(prev => !prev);
       if (!showNotificationsPanel && newVideoIds.length > 0) {
@@ -736,7 +731,7 @@ const App: React.FC = () => {
                         currentSubscriptionUrl={subscriptionUrl}
                         onConfigureAndSync={handleConfigureAndSync}
                         currentSyncSettings={syncSettings}
-                        onAdSettingsChange={handleAdSettingsChange}
+                        onAdSettingsChange={setAdSettings}
                         currentAdSettings={adSettings}
                         onExportData={handleExportData}
                         onImportData={handleImportData}
