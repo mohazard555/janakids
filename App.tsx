@@ -569,25 +569,15 @@ const App: React.FC = () => {
         const updateStateWithNewCount = (list: Video[], newCount: number) =>
             list.map(v => v.id === videoId ? { ...v, views: newCount } : v);
         
-        const fallbackIncrement = (list: Video[]) =>
-            list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
-
         if (COUNTER_NAMESPACE) {
             try {
-                // First, send a request to increment the counter. We don't need to parse the response.
+                // Increment the counter and get the new value in one call.
                 const hitResponse = await fetch(`https://api.countapi.xyz/hit/${COUNTER_NAMESPACE}/item-${videoId}`);
                 if (!hitResponse.ok) {
                     throw new Error('Count API "hit" request failed');
                 }
-
-                // To ensure we show the most accurate global count, we now fetch the new total.
-                // This is more reliable than just trusting the response from the 'hit' endpoint.
-                const getResponse = await fetch(`https://api.countapi.xyz/get/${COUNTER_NAMESPACE}/item-${videoId}`);
-                if (!getResponse.ok) {
-                    throw new Error('Count API "get" request failed after a successful "hit"');
-                }
                 
-                const data = await getResponse.json();
+                const data = await hitResponse.json();
                 const newTotalViews = data.value;
 
                 if (typeof newTotalViews === 'number') {
@@ -596,21 +586,33 @@ const App: React.FC = () => {
                     setBaseVideos(prev => updateStateWithNewCount(prev, newTotalViews));
                     setBaseShorts(prev => updateStateWithNewCount(prev, newTotalViews));
                 } else {
-                    throw new Error('Invalid Count API "get" response, value is not a number');
+                    throw new Error('Invalid Count API "hit" response, value is not a number');
                 }
             } catch (e) {
-                console.warn("Failed to update and get view count from API, falling back to local increment.", e);
-                setVideos(prev => fallbackIncrement(prev));
-                setShorts(prev => fallbackIncrement(prev));
-                setBaseVideos(prev => fallbackIncrement(prev));
-                setBaseShorts(prev => fallbackIncrement(prev));
+                console.warn("Failed to update view count from API. View count will not be updated on screen.", e);
+                // Fallback to local-only increment removed to prevent showing inaccurate counts.
             }
         } else {
+             // Fallback for when no counter service is configured.
+            const fallbackIncrement = (list: Video[]) =>
+                list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
             setVideos(prev => fallbackIncrement(prev));
             setShorts(prev => fallbackIncrement(prev));
             setBaseVideos(prev => fallbackIncrement(prev));
             setBaseShorts(prev => fallbackIncrement(prev));
         }
+    }
+  };
+
+  const handleCloseNotifications = () => {
+    setShowNotificationsPanel(false);
+    if (newVideoIds.length > 0) {
+        const seenVideosRaw = localStorage.getItem('janaKidsSeenVideos');
+        const seenVideoIds: number[] = seenVideosRaw ? JSON.parse(seenVideosRaw) : [];
+        const allCurrentVideoIds = videos.map(v => v.id);
+        const updatedSeenIds = [...new Set([...seenVideoIds, ...allCurrentVideoIds])];
+        localStorage.setItem('janaKidsSeenVideos', JSON.stringify(updatedSeenIds));
+        setNewVideoIds([]);
     }
   };
 
@@ -637,236 +639,186 @@ const App: React.FC = () => {
     return false;
   };
 
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+  };
+
   const handleDeleteVideo = (videoId: number) => {
     setVideos(prev => prev.filter(v => v.id !== videoId));
-    setShorts(prev => prev.filter(s => s.id !== videoId));
     setBaseVideos(prev => prev.filter(v => v.id !== videoId));
-    setBaseShorts(prev => prev.filter(s => s.id !== videoId));
-    setPlaylists(prev => prev.map(p => ({ ...p, videoIds: p.videoIds.filter(id => id !== videoId) })));
+    setShorts(prev => prev.filter(v => v.id !== videoId));
+    setBaseShorts(prev => prev.filter(v => v.id !== videoId));
+    setPlaylists(prev => prev.map(p => ({
+        ...p,
+        videoIds: p.videoIds.filter(id => id !== videoId)
+    })));
   };
 
-  const handleDeleteActivity = (activityId: number) => {
-    setActivities(prev => prev.filter(a => a.id !== activityId));
-  };
-
-  const handleUpdateVideo = (updatedData: { id: number; title: string; youtubeUrl: string }) => {
-    const videoId = getYoutubeVideoId(updatedData.youtubeUrl);
+  const handleEditVideo = (video: { id: number; title: string; youtubeUrl: string }) => {
+    const videoId = getYoutubeVideoId(video.youtubeUrl);
     if (!videoId) {
       alert('رابط يوتيوب غير صالح.');
       return;
     }
     const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-    const updater = (list: Video[]) => list.map(v => v.id === updatedData.id ? { ...v, ...updatedData, thumbnailUrl } : v);
-    setVideos(updater);
-    setShorts(updater);
-    setBaseVideos(updater);
-    setBaseShorts(updater);
+    
+    const updateInList = (list: Video[]) => list.map(v => v.id === video.id ? { ...v, ...video, thumbnailUrl } : v);
+
+    setVideos(prev => updateInList(prev));
+    setBaseVideos(prev => updateInList(prev));
+    setShorts(prev => updateInList(prev));
+    setBaseShorts(prev => updateInList(prev));
+
     setEditingVideo(null);
   };
-
-  const handleToggleNotifications = () => {
-      setShowNotificationsPanel(prev => !prev);
-      if (!showNotificationsPanel && newVideoIds.length > 0) {
-          const allCurrentVideoIds = videos.map(v => v.id);
-          localStorage.setItem('janaKidsSeenVideos', JSON.stringify(allCurrentVideoIds));
-          setNewVideoIds([]);
-      }
+  
+  const handleDeleteActivity = (activityId: number) => {
+    setActivities(prev => prev.filter(a => a.id !== activityId));
   };
 
-  const handleToggleAdsPanel = () => {
-    setShowAdsPanel(prev => !prev);
+
+  const getFilteredVideos = () => {
+    let filtered = videos;
+
+    if (selectedPlaylistId !== 'all') {
+      const selectedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
+      const videoIdsInPlaylist = selectedPlaylist ? selectedPlaylist.videoIds : [];
+      filtered = videos.filter(v => videoIdsInPlaylist.includes(v.id));
+    }
+
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(v => v.title.toLowerCase().includes(searchQuery.toLowerCase()));
+    }
+
+    return filtered;
   };
-
-  const handleAdSettingsChange = (newSettings: AdSettings) => {
-    setAdSettings(newSettings);
-  };
-
-  const videosToDisplay = (selectedPlaylistId === 'all' 
-    ? videos 
-    : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id))
-  ).filter(video => 
-    video.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const newVideosList = videos.filter(v => newVideoIds.includes(v.id));
-
-  const validAds = adSettings.ads.filter(ad => ad.imageUrl);
-
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-sky-50 p-8 text-center">
-        <svg className="animate-spin h-16 w-16 text-sky-500 mb-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <h1 className="text-4xl font-black text-sky-700 mb-4">
-            جاري تحضير عالم جنى الممتع!
-        </h1>
-        <p className="text-lg text-gray-600 max-w-xl">
-            لحظات قليلة وستظهر أحدث الفيديوهات والأنشطة. في زيارتك الأولى، قد يستغرق الأمر وقتاً أطول قليلاً لجلب كل شيء. شكراً لصبرك الجميل!
-        </p>
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center bg-sky-50 text-sky-600 font-bold text-2xl">...جاري تحميل عالم جنى كيدز</div>;
   }
-
+  
   if (loadingError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-800 p-8">
-          <div className="text-center max-w-2xl bg-white p-10 rounded-2xl shadow-2xl border-2 border-red-200">
-              <h1 className="text-4xl font-black mb-4">⚠️ حدث خطأ</h1>
-              <p className="text-lg mb-6">
-                  {loadingError}
-              </p>
-              <button 
-                onClick={() => window.location.reload()}
-                className="bg-red-500 text-white font-bold py-3 px-8 rounded-lg hover:bg-red-600 transition-colors duration-300 shadow-lg text-lg"
-              >
-                إعادة المحاولة
-              </button>
-          </div>
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-600 font-bold text-2xl p-8 text-center">{loadingError}</div>
   }
 
-  if (!GIST_RAW_URL) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-800 p-8">
-          <div className="text-center max-w-2xl bg-white p-10 rounded-2xl shadow-2xl border-2 border-red-200">
-              <h1 className="text-4xl font-black mb-4">⚠️ خطوة مهمة مطلوبة</h1>
-              <p className="text-lg mb-6">
-                  مصدر بيانات الموقع غير محدد. لكي يعمل الموقع، يجب على المطور تعديل ملف <code className="bg-red-100 p-1 rounded-md text-base font-mono">App.tsx</code> وإضافة رابط البيانات الخام (Raw URL) الخاص بملف Gist.
-              </p>
-              <p className="text-gray-600">
-                  الرجاء مراجعة التعليمات الموجودة في أعلى الملف.
-              </p>
-          </div>
-      </div>
-    );
-  }
+  const displayedVideos = getFilteredVideos();
 
   return (
-    <div className="min-h-screen relative">
-      <div className="absolute top-1/4 left-5 sm:left-10 text-8xl opacity-10 select-none -z-10 transform -rotate-12 pointer-events-none" aria-hidden="true">🦁</div>
-      <div className="absolute top-1/2 right-5 sm:right-10 text-8xl opacity-10 select-none -z-10 transform rotate-12 pointer-events-none" aria-hidden="true">🐘</div>
-
-      {showLoginModal && <LoginModal onLogin={handleLogin} onClose={() => setShowLoginModal(false)} />}
-      
-      {editingVideo && <EditVideoModal video={editingVideo} onUpdate={handleUpdateVideo} onClose={() => setEditingVideo(null)} />}
-
-      <Header 
-        logo={channelLogo} 
-        onLogoUpload={handleLogoUpload} 
-        isLoggedIn={isLoggedIn} 
+    <div className="App">
+      <Header
+        logo={channelLogo}
+        onLogoUpload={handleLogoUpload}
+        isLoggedIn={isLoggedIn}
         onLoginClick={() => setShowLoginModal(true)}
-        onLogoutClick={() => setIsLoggedIn(false)}
+        onLogoutClick={handleLogout}
         channelDescription={channelDescription}
         onDescriptionChange={setChannelDescription}
         videoCount={videos.length}
         subscriptionUrl={subscriptionUrl}
       />
-      <main className="container mx-auto px-4 py-10">
-        <div className="my-8 flex justify-between items-center gap-4 relative">
+      <main className="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <div className="flex items-center justify-between mb-8">
             <SearchBar query={searchQuery} onQueryChange={setSearchQuery} />
-             <div className="flex items-center flex-shrink-0">
-                <AdIcon count={validAds.length} onClick={handleToggleAdsPanel} />
-                <NotificationBell count={newVideoIds.length} onClick={handleToggleNotifications} />
+            <div className="relative">
+              <AdIcon count={adSettings.ads.length} onClick={() => setShowAdsPanel(p => !p)} />
+               {showAdsPanel && <AdsPanel ads={adSettings.ads} onClose={() => setShowAdsPanel(false)} />}
             </div>
-            {showAdsPanel && (
-                <AdsPanel
-                    ads={validAds}
-                    onClose={() => setShowAdsPanel(false)}
+            <div className="relative">
+                <NotificationBell
+                  count={newVideoIds.length}
+                  onClick={() => setShowNotificationsPanel(p => !p)}
                 />
-            )}
-            {showNotificationsPanel && (
-              <NotificationPanel 
-                newVideos={newVideosList}
-                onClose={() => setShowNotificationsPanel(false)}
-              />
-            )}
+                {showNotificationsPanel && (
+                  <NotificationPanel
+                    newVideos={videos.filter(v => newVideoIds.includes(v.id))}
+                    onClose={handleCloseNotifications}
+                  />
+                )}
+            </div>
         </div>
-        
-        {isLoggedIn && (
-            <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl shadow-lg mb-12 border border-sky-200">
-                <h2 className="text-4xl font-black text-center text-sky-700 mb-8">لوحة تحكم الأدمن</h2>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                    <AddVideoForm onAddVideo={handleAddVideo} />
-                    <AddShortsForm onAddShort={handleAddShort} />
-                    <AddActivityForm onAddActivity={handleAddActivity} />
-                </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <CreatePlaylistForm onCreatePlaylist={handleCreatePlaylist} />
-                    <AdminSettings 
-                        onCredentialsChange={setCredentials} 
-                        currentCredentials={credentials}
-                        onSubscriptionUrlChange={setSubscriptionUrl}
-                        currentSubscriptionUrl={subscriptionUrl}
-                        onConfigureAndSync={handleConfigureAndSync}
-                        currentSyncSettings={syncSettings}
-                        onAdSettingsChange={handleAdSettingsChange}
-                        currentAdSettings={adSettings}
-                        onExportData={handleExportData}
-                        onImportData={handleImportData}
-                    />
-                </div>
-            </div>
-        )}
-        
-        {(shorts.length > 0 || isLoggedIn) && <ShortsCarousel shorts={shorts} onWatchNowClick={handleIncrementViewCount} />}
 
-        {(activities.length > 0 || isLoggedIn) && (
-            <div className="my-12">
-                <h2 className="text-3xl font-bold text-gray-800 mb-6 border-r-8 border-green-500 pr-4">
-                    🎨 أنشطة تعليمية ومرحة
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-                    {activities.map(activity => (
-                        <ActivityCard key={activity.id} activity={activity} isAdmin={isLoggedIn} onDeleteActivity={handleDeleteActivity} />
-                    ))}
-                    {activities.length === 0 && isLoggedIn && (
-                        <div className="col-span-full text-center py-16 bg-gray-100 rounded-2xl"><p className="text-lg text-gray-500">ابدأ بإضافة نشاط جديد!</p></div>
-                    )}
-                </div>
+        {isLoggedIn && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 mb-12">
+            <AddVideoForm onAddVideo={handleAddVideo} />
+            <AddShortsForm onAddShort={handleAddShort} />
+            <CreatePlaylistForm onCreatePlaylist={handleCreatePlaylist} />
+            <div className="lg:col-span-1 xl:col-span-1">
+                <AddActivityForm onAddActivity={handleAddActivity} />
             </div>
+            <div className="md:col-span-2 lg:col-span-3 xl:col-span-4">
+                 <AdminSettings 
+                    onCredentialsChange={setCredentials} 
+                    currentCredentials={credentials}
+                    onSubscriptionUrlChange={setSubscriptionUrl}
+                    currentSubscriptionUrl={subscriptionUrl}
+                    onConfigureAndSync={handleConfigureAndSync}
+                    currentSyncSettings={syncSettings}
+                    onAdSettingsChange={setAdSettings}
+                    currentAdSettings={adSettings}
+                    onExportData={handleExportData}
+                    onImportData={handleImportData}
+                 />
+            </div>
+          </div>
         )}
+
+        {shorts.length > 0 && <ShortsCarousel shorts={shorts} onWatchNowClick={handleIncrementViewCount} />}
+
+        <h2 className="text-3xl font-bold text-gray-800 mt-12 mb-2 border-r-8 border-sky-500 pr-4">
+           {selectedPlaylistId === 'all' ? 'كل الفيديوهات' : playlists.find(p=>p.id === selectedPlaylistId)?.name}
+        </h2>
 
         <PlaylistTabs playlists={playlists} selectedId={selectedPlaylistId} onSelect={setSelectedPlaylistId} />
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {videosToDisplay.length > 0 ? (
-            videosToDisplay.map((video) => (
-              <VideoCard 
-                key={video.id} video={video} isAdmin={isLoggedIn} playlists={playlists}
-                onAddToPlaylist={handleAddToPlaylist}
-                onDeleteVideo={handleDeleteVideo}
-                onEditVideo={setEditingVideo}
-                onWatchNowClick={handleIncrementViewCount}
-              />
-            ))
-          ) : (
-            <div className="col-span-full text-center py-16 bg-white/50 rounded-3xl shadow-inner border-2 border-dashed border-sky-200">
-                <div className="text-6xl mb-4">🎬</div>
-                <h3 className="text-3xl font-bold text-sky-700 mb-2">
-                  {searchQuery ? `لا توجد نتائج بحث` : 'مكتبة الفيديو فارغة حالياً'}
-                </h3>
-                <p className="text-lg text-gray-600 max-w-xl mx-auto">
-                    {searchQuery 
-                        ? `لم نتمكن من العثور على أي فيديو يطابق "${searchQuery}".` 
-                        : (isLoggedIn 
-                            ? 'رائع! لنبدأ بإضافة أول فيديو لك من لوحة تحكم الأدمن في الأعلى.' 
-                            : 'مرحباً بك في قناة جنى! نحن نجهز لكم فيديوهات جديدة وممتعة. عودوا لزيارتنا قريباً!')
-                    }
+        
+        {displayedVideos.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+                {displayedVideos.map(video => (
+                    <VideoCard
+                    key={video.id}
+                    video={video}
+                    isAdmin={isLoggedIn}
+                    playlists={playlists}
+                    onAddToPlaylist={handleAddToPlaylist}
+                    onDeleteVideo={handleDeleteVideo}
+                    onEditVideo={setEditingVideo}
+                    onWatchNowClick={handleIncrementViewCount}
+                    />
+                ))}
+            </div>
+        ) : (
+            <div className="w-full text-center py-16 bg-white/50 rounded-2xl">
+                <p className="text-2xl text-gray-500">
+                    {searchQuery ? 'لم يتم العثور على فيديوهات تطابق بحثك.' : 'لا توجد فيديوهات في قائمة التشغيل هذه بعد.'}
                 </p>
             </div>
-          )}
-        </div>
-      </main>
+        )}
 
-      {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}
-      
+        {activities.length > 0 && (
+             <div className="mt-20">
+                <h2 className="text-3xl font-bold text-gray-800 mb-6 border-r-8 border-green-500 pr-4">
+                    أنشطة وأوراق عمل
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+                    {activities.map(activity => (
+                        <ActivityCard 
+                            key={activity.id} 
+                            activity={activity}
+                            isAdmin={isLoggedIn}
+                            onDeleteActivity={handleDeleteActivity}
+                        />
+                    ))}
+                </div>
+            </div>
+        )}
+
+      </main>
       <Footer />
+      {showLoginModal && <LoginModal onLogin={handleLogin} onClose={() => setShowLoginModal(false)} />}
+      {editingVideo && <EditVideoModal video={editingVideo} onUpdate={handleEditVideo} onClose={() => setEditingVideo(null)} />}
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
-      {isLoggedIn && <SyncIndicator isSyncing={isSyncing} />}
+      {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}
+      <SyncIndicator isSyncing={isSyncing} />
     </div>
   );
 };
