@@ -104,6 +104,7 @@ const App: React.FC = () => {
   const [syncSettings, setSyncSettings] = useState<GistSyncSettings>({ githubToken: '' });
 
   const syncTimerRef = useRef<number | null>(null);
+  const liveViewsFetchedRef = useRef(false);
 
   const migrateAdSettings = (loadedAdSettings: any): AdSettings => {
     if (loadedAdSettings && typeof loadedAdSettings.enabled !== 'undefined') {
@@ -197,34 +198,6 @@ const App: React.FC = () => {
               
               const remoteData = await response.json();
 
-              // Fetch live view counts from central counter service
-              if (COUNTER_NAMESPACE) {
-                  try {
-                      console.log("Fetching live view counts...");
-                      const fetchCounts = async (items: Video[]) => {
-                          const promises = items.map(item =>
-                              fetch(`https://api.countapi.xyz/get/${COUNTER_NAMESPACE}/item-${item.id}`)
-                                  .then(res => res.ok ? res.json() : { value: 0 })
-                                  .then(data => ({ id: item.id, views: data.value || 0 }))
-                                  .catch(() => ({ id: item.id, views: 0 }))
-                          );
-                          const results = await Promise.all(promises);
-                          const viewsMap = new Map(results.map(r => [r.id, r.views]));
-                          return items.map(item => ({
-                              ...item,
-                              views: Math.max(item.views || 0, viewsMap.get(item.id) || 0),
-                          }));
-                      };
-                      
-                      remoteData.videos = await fetchCounts(remoteData.videos || []);
-                      remoteData.shorts = await fetchCounts(remoteData.shorts || []);
-                      console.log("Live view counts merged.");
-
-                  } catch (e) {
-                      console.warn("Could not fetch live view counts, using Gist data as fallback.", e);
-                  }
-              }
-
               // Merge locally incremented view counts with the official data.
               if (localData) {
                 const mergeViews = (remoteList: Video[] = [], localList: Video[] = []) => {
@@ -271,6 +244,72 @@ const App: React.FC = () => {
 
     loadInitialData();
   }, []);
+
+  // Effect for fetching live view counts in the background AFTER initial render
+  useEffect(() => {
+    // This effect should only run once after the initial data is loaded.
+    if (isLoading || liveViewsFetchedRef.current) {
+      return;
+    }
+    
+    liveViewsFetchedRef.current = true;
+
+    const fetchLiveViewCounts = async () => {
+        if (!COUNTER_NAMESPACE || (baseVideos.length === 0 && baseShorts.length === 0)) {
+            return;
+        }
+
+        console.log("Starting background fetch for live view counts...");
+
+        const fetchCounts = async (items: Video[]) => {
+            if (!items || items.length === 0) return items;
+            const promises = items.map(item =>
+                fetch(`https://api.countapi.xyz/get/${COUNTER_NAMESPACE}/item-${item.id}`)
+                    .then(res => res.ok ? res.json() : { value: 0 })
+                    .then(data => ({ id: item.id, views: data.value || 0 }))
+                    .catch(() => ({ id: item.id, views: 0 }))
+            );
+            const results = await Promise.all(promises);
+            const viewsMap = new Map(results.map(r => [r.id, r.views]));
+            return items.map(item => ({
+                ...item,
+                views: Math.max(item.views || 0, viewsMap.get(item.id) || 0),
+            }));
+        };
+
+        try {
+            // Fetch based on current state.
+            const [newlyFetchedVideos, newlyFetchedShorts] = await Promise.all([
+                fetchCounts(baseVideos),
+                fetchCounts(baseShorts)
+            ]);
+            
+            console.log("Live view counts fetched. Updating state, which will trigger main sync effect.");
+
+            // Update the base data. This will trigger the sync effect.
+            setBaseVideos(newlyFetchedVideos);
+            setBaseShorts(newlyFetchedShorts);
+
+            // Re-apply search/filter to the derived display state.
+            if (searchQuery) {
+                 const lowerCaseQuery = searchQuery.toLowerCase();
+                 const filtered = newlyFetchedVideos.filter(video => 
+                   video.title.toLowerCase().includes(lowerCaseQuery)
+                 );
+                 setVideos(filtered);
+            } else {
+                 setVideos(newlyFetchedVideos);
+            }
+            setShorts(newlyFetchedShorts);
+
+        } catch (e) {
+            console.warn("Background fetch for live view counts failed.", e);
+        }
+    };
+    
+    fetchLiveViewCounts();
+
+  }, [isLoading, baseVideos, baseShorts, searchQuery]);
 
 
   // Effect for syncing data to localStorage and Gist
