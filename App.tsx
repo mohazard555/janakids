@@ -763,6 +763,7 @@ const App: React.FC = () => {
     };
     setFeedback(prev => [newFeedback, ...prev]);
     setToastMessage({ text: 'شكراً لمشاركتنا رأيك!', type: 'success' });
+    setShowFeedbackPanel(true);
   };
 
   const handleDeleteFeedback = (feedbackId: number) => {
