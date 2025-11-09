@@ -557,21 +557,29 @@ const App: React.FC = () => {
   };
   
   const handleIncrementViewCount = async (videoId: number) => {
+    // Always perform an optimistic UI update for immediate feedback.
+    // This makes the counter feel responsive to the user on every click.
+    const optimisticIncrement = (list: Video[]) =>
+        list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
+    
+    setVideos(prev => optimisticIncrement(prev));
+    setShorts(prev => optimisticIncrement(prev));
+    setBaseVideos(prev => optimisticIncrement(prev));
+    setBaseShorts(prev => optimisticIncrement(prev));
+
+    // Now, check if this is a "real" new view that should be persisted and synced globally.
     const watchedVideosKey = 'janaKidsWatchedVideos';
     const watchedVideosRaw = localStorage.getItem(watchedVideosKey);
     const watchedVideos: number[] = watchedVideosRaw ? JSON.parse(watchedVideosRaw) : [];
 
-    // Only count the view if this browser hasn't watched the video before.
+    // Only sync with the central counter if this browser hasn't watched the video before.
     if (!watchedVideos.includes(videoId)) {
         watchedVideos.push(videoId);
         localStorage.setItem(watchedVideosKey, JSON.stringify(watchedVideos));
-
-        const updateStateWithNewCount = (list: Video[], newCount: number) =>
-            list.map(v => v.id === videoId ? { ...v, views: newCount } : v);
         
         if (COUNTER_NAMESPACE) {
             try {
-                // Increment the counter and get the new value in one call.
+                // Increment the central counter and get the new authoritative value.
                 const hitResponse = await fetch(`https://api.countapi.xyz/hit/${COUNTER_NAMESPACE}/item-${videoId}`);
                 if (!hitResponse.ok) {
                     throw new Error('Count API "hit" request failed');
@@ -581,25 +589,22 @@ const App: React.FC = () => {
                 const newTotalViews = data.value;
 
                 if (typeof newTotalViews === 'number') {
-                    setVideos(prev => updateStateWithNewCount(prev, newTotalViews));
-                    setShorts(prev => updateStateWithNewCount(prev, newTotalViews));
-                    setBaseVideos(prev => updateStateWithNewCount(prev, newTotalViews));
-                    setBaseShorts(prev => updateStateWithNewCount(prev, newTotalViews));
+                    // Sync our UI with the authoritative count from the API.
+                    // This corrects the local optimistic update with the true global count.
+                    const updateStateWithApiCount = (list: Video[]) =>
+                        list.map(v => v.id === videoId ? { ...v, views: newTotalViews } : v);
+                    
+                    setVideos(prev => updateStateWithApiCount(prev));
+                    setShorts(prev => updateStateWithApiCount(prev));
+                    setBaseVideos(prev => updateStateWithApiCount(prev));
+                    setBaseShorts(prev => updateStateWithApiCount(prev));
                 } else {
                     throw new Error('Invalid Count API "hit" response, value is not a number');
                 }
             } catch (e) {
-                console.warn("Failed to update view count from API. View count will not be updated on screen.", e);
-                // Fallback to local-only increment removed to prevent showing inaccurate counts.
+                console.warn("Failed to sync view count with API. The local optimistic update remains for this session.", e);
+                // On failure, the optimistic update remains.
             }
-        } else {
-             // Fallback for when no counter service is configured.
-            const fallbackIncrement = (list: Video[]) =>
-                list.map(v => v.id === videoId ? { ...v, views: (v.views || 0) + 1 } : v);
-            setVideos(prev => fallbackIncrement(prev));
-            setShorts(prev => fallbackIncrement(prev));
-            setBaseVideos(prev => fallbackIncrement(prev));
-            setBaseShorts(prev => fallbackIncrement(prev));
         }
     }
   };
@@ -676,32 +681,45 @@ const App: React.FC = () => {
     setActivities(prev => prev.filter(a => a.id !== activityId));
   };
 
-
-  const getFilteredVideos = () => {
-    let filtered = videos;
-
-    if (selectedPlaylistId !== 'all') {
-      const selectedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
-      const videoIdsInPlaylist = selectedPlaylist ? selectedPlaylist.videoIds : [];
-      filtered = videos.filter(v => videoIdsInPlaylist.includes(v.id));
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    if (query === '') {
+      setVideos(baseVideos);
+      return;
     }
-
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(v => v.title.toLowerCase().includes(searchQuery.toLowerCase()));
-    }
-
-    return filtered;
+    const lowerCaseQuery = query.toLowerCase();
+    const filtered = baseVideos.filter(video => 
+      video.title.toLowerCase().includes(lowerCaseQuery)
+    );
+    setVideos(filtered);
   };
 
+  const filteredVideos = selectedPlaylistId === 'all'
+    ? videos
+    : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id));
+
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center bg-sky-50 text-sky-600 font-bold text-2xl">...جاري تحميل عالم جنى كيدز</div>;
-  }
-  
-  if (loadingError) {
-    return <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-600 font-bold text-2xl p-8 text-center">{loadingError}</div>
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-sky-50 text-2xl font-bold text-sky-600">
+        ...جاري تحميل عالم جنى كيدز
+      </div>
+    );
   }
 
-  const displayedVideos = getFilteredVideos();
+  if (loadingError) {
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 text-center p-4">
+            <h2 className="text-3xl font-bold text-red-600 mb-4">حدث خطأ</h2>
+            <p className="text-lg text-red-800 bg-red-100 p-4 rounded-lg">{loadingError}</p>
+            <button
+                onClick={() => window.location.reload()}
+                className="mt-6 bg-red-500 text-white font-bold py-2 px-6 rounded-full hover:bg-red-600 transition-colors"
+            >
+                إعادة تحميل الصفحة
+            </button>
+        </div>
+    );
+  }
 
   return (
     <div className="App">
@@ -713,97 +731,89 @@ const App: React.FC = () => {
         onLogoutClick={handleLogout}
         channelDescription={channelDescription}
         onDescriptionChange={setChannelDescription}
-        videoCount={videos.length}
+        videoCount={baseVideos.length}
         subscriptionUrl={subscriptionUrl}
       />
-      <main className="container mx-auto p-4 sm:p-6 lg:p-8">
+
+      <main className="container mx-auto p-4 md:p-8">
         
-        <div className="flex items-center justify-between mb-8">
-            <SearchBar query={searchQuery} onQueryChange={setSearchQuery} />
-            <div className="relative">
-              <AdIcon count={adSettings.ads.length} onClick={() => setShowAdsPanel(p => !p)} />
-               {showAdsPanel && <AdsPanel ads={adSettings.ads} onClose={() => setShowAdsPanel(false)} />}
-            </div>
-            <div className="relative">
-                <NotificationBell
-                  count={newVideoIds.length}
-                  onClick={() => setShowNotificationsPanel(p => !p)}
-                />
-                {showNotificationsPanel && (
-                  <NotificationPanel
-                    newVideos={videos.filter(v => newVideoIds.includes(v.id))}
-                    onClose={handleCloseNotifications}
-                  />
-                )}
-            </div>
+        <div className="flex items-center mb-8 relative">
+            <SearchBar query={searchQuery} onQueryChange={handleSearchChange} />
+            <NotificationBell count={newVideoIds.length} onClick={() => setShowNotificationsPanel(p => !p)} />
+            {showNotificationsPanel && (
+                <NotificationPanel newVideos={videos.filter(v => newVideoIds.includes(v.id))} onClose={handleCloseNotifications} />
+            )}
+            {adSettings.ads.length > 0 && (
+                <div className="ml-2 relative">
+                    <AdIcon count={adSettings.ads.length} onClick={() => setShowAdsPanel(p => !p)} />
+                    {showAdsPanel && <AdsPanel ads={adSettings.ads} onClose={() => setShowAdsPanel(false)} />}
+                </div>
+            )}
         </div>
 
         {isLoggedIn && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 mb-12">
-            <AddVideoForm onAddVideo={handleAddVideo} />
-            <AddShortsForm onAddShort={handleAddShort} />
-            <CreatePlaylistForm onCreatePlaylist={handleCreatePlaylist} />
-            <div className="lg:col-span-1 xl:col-span-1">
+            <div className="grid md:grid-cols-3 gap-8 mb-12">
+                <AddVideoForm onAddVideo={handleAddVideo} />
+                <CreatePlaylistForm onCreatePlaylist={handleCreatePlaylist} />
+                <AddShortsForm onAddShort={handleAddShort} />
                 <AddActivityForm onAddActivity={handleAddActivity} />
+                <div className="md:col-span-2">
+                    <AdminSettings 
+                        onCredentialsChange={setCredentials} 
+                        currentCredentials={credentials}
+                        onSubscriptionUrlChange={setSubscriptionUrl}
+                        currentSubscriptionUrl={subscriptionUrl}
+                        onConfigureAndSync={handleConfigureAndSync}
+                        currentSyncSettings={syncSettings}
+                        onAdSettingsChange={setAdSettings}
+                        currentAdSettings={adSettings}
+                        onExportData={handleExportData}
+                        onImportData={handleImportData}
+                    />
+                </div>
             </div>
-            <div className="md:col-span-2 lg:col-span-3 xl:col-span-4">
-                 <AdminSettings 
-                    onCredentialsChange={setCredentials} 
-                    currentCredentials={credentials}
-                    onSubscriptionUrlChange={setSubscriptionUrl}
-                    currentSubscriptionUrl={subscriptionUrl}
-                    onConfigureAndSync={handleConfigureAndSync}
-                    currentSyncSettings={syncSettings}
-                    onAdSettingsChange={setAdSettings}
-                    currentAdSettings={adSettings}
-                    onExportData={handleExportData}
-                    onImportData={handleImportData}
-                 />
-            </div>
+        )}
+        
+        {shorts.length > 0 && (
+            <ShortsCarousel shorts={shorts} onWatchNowClick={handleIncrementViewCount} />
+        )}
+
+        <PlaylistTabs playlists={playlists} selectedId={selectedPlaylistId} onSelect={setSelectedPlaylistId} />
+
+        {filteredVideos.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+            {filteredVideos.map(video => (
+              <VideoCard
+                key={video.id}
+                video={video}
+                isAdmin={isLoggedIn}
+                playlists={playlists}
+                onAddToPlaylist={handleAddToPlaylist}
+                onDeleteVideo={handleDeleteVideo}
+                onEditVideo={(v) => setEditingVideo(v)}
+                onWatchNowClick={handleIncrementViewCount}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-16 bg-white/50 rounded-2xl">
+            <h3 className="text-2xl font-bold text-sky-800">لا توجد فيديوهات هنا بعد</h3>
+            <p className="text-gray-600 mt-2">
+                {searchQuery ? `لم يتم العثور على نتائج للبحث عن "${searchQuery}".` : 'جرب اختيار قائمة تشغيل أخرى أو أضف فيديوهات جديدة!'}
+            </p>
           </div>
         )}
 
-        {shorts.length > 0 && <ShortsCarousel shorts={shorts} onWatchNowClick={handleIncrementViewCount} />}
-
-        <h2 className="text-3xl font-bold text-gray-800 mt-12 mb-2 border-r-8 border-sky-500 pr-4">
-           {selectedPlaylistId === 'all' ? 'كل الفيديوهات' : playlists.find(p=>p.id === selectedPlaylistId)?.name}
-        </h2>
-
-        <PlaylistTabs playlists={playlists} selectedId={selectedPlaylistId} onSelect={setSelectedPlaylistId} />
-        
-        {displayedVideos.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                {displayedVideos.map(video => (
-                    <VideoCard
-                    key={video.id}
-                    video={video}
-                    isAdmin={isLoggedIn}
-                    playlists={playlists}
-                    onAddToPlaylist={handleAddToPlaylist}
-                    onDeleteVideo={handleDeleteVideo}
-                    onEditVideo={setEditingVideo}
-                    onWatchNowClick={handleIncrementViewCount}
-                    />
-                ))}
-            </div>
-        ) : (
-            <div className="w-full text-center py-16 bg-white/50 rounded-2xl">
-                <p className="text-2xl text-gray-500">
-                    {searchQuery ? 'لم يتم العثور على فيديوهات تطابق بحثك.' : 'لا توجد فيديوهات في قائمة التشغيل هذه بعد.'}
-                </p>
-            </div>
-        )}
-
         {activities.length > 0 && (
-             <div className="mt-20">
-                <h2 className="text-3xl font-bold text-gray-800 mb-6 border-r-8 border-green-500 pr-4">
+            <div className="mt-16">
+                 <h2 className="text-3xl font-bold text-gray-800 mb-6 border-r-8 border-green-500 pr-4">
                     أنشطة وأوراق عمل
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
                     {activities.map(activity => (
                         <ActivityCard 
                             key={activity.id} 
-                            activity={activity}
+                            activity={activity} 
                             isAdmin={isLoggedIn}
                             onDeleteActivity={handleDeleteActivity}
                         />
@@ -811,13 +821,28 @@ const App: React.FC = () => {
                 </div>
             </div>
         )}
-
       </main>
-      <Footer />
-      {showLoginModal && <LoginModal onLogin={handleLogin} onClose={() => setShowLoginModal(false)} />}
-      {editingVideo && <EditVideoModal video={editingVideo} onUpdate={handleEditVideo} onClose={() => setEditingVideo(null)} />}
-      <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+      
       {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}
+
+      <Footer />
+      
+      {showLoginModal && (
+        <LoginModal
+          onLogin={handleLogin}
+          onClose={() => setShowLoginModal(false)}
+        />
+      )}
+
+      {editingVideo && (
+        <EditVideoModal 
+            video={editingVideo}
+            onUpdate={handleEditVideo}
+            onClose={() => setEditingVideo(null)}
+        />
+      )}
+
+      <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
       <SyncIndicator isSyncing={isSyncing} />
     </div>
   );
