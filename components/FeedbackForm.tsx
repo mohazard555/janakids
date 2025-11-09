@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 interface FeedbackFormProps {
     onAddFeedback: (rating: number, comment: string) => void;
+    isSubmitting: boolean;
 }
 
 const StarIcon: React.FC<{ filled: boolean; onMouseEnter: () => void; onClick: () => void; }> = ({ filled, onMouseEnter, onClick }) => (
@@ -16,7 +17,7 @@ const StarIcon: React.FC<{ filled: boolean; onMouseEnter: () => void; onClick: (
     </svg>
 );
 
-const FeedbackForm: React.FC<FeedbackFormProps> = ({ onAddFeedback }) => {
+const FeedbackForm: React.FC<FeedbackFormProps> = ({ onAddFeedback, isSubmitting }) => {
     const [rating, setRating] = useState(0);
     const [hoverRating, setHoverRating] = useState(0);
     const [comment, setComment] = useState('');
@@ -24,6 +25,7 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ onAddFeedback }) => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmitting) return;
         if (rating === 0) {
             alert('الرجاء اختيار تقييم (عدد النجوم)');
             return;
@@ -33,25 +35,13 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ onAddFeedback }) => {
             return;
         }
         onAddFeedback(rating, comment);
-        setSubmitted(true);
-        // Reset form after a delay
-        setTimeout(() => {
-            setRating(0);
-            setHoverRating(0);
-            setComment('');
-            setSubmitted(false);
-        }, 5000);
+        // The parent component will handle the success message via toast
+        // and we reset the form immediately upon submission attempt.
+        setRating(0);
+        setHoverRating(0);
+        setComment('');
     };
     
-    if (submitted) {
-        return (
-            <div className="mt-4 text-center bg-green-100 text-green-800 p-4 rounded-lg animate-fade-in w-full">
-                <h4 className="font-bold text-lg">شكراً لك!</h4>
-                <p>تم استلام رأيك بنجاح.</p>
-            </div>
-        );
-    }
-
     return (
         <div className="mt-4 text-center w-full">
             <h4 className="font-bold text-pink-100 text-lg">ما هو رأيك في القناة؟</h4>
@@ -73,12 +63,14 @@ const FeedbackForm: React.FC<FeedbackFormProps> = ({ onAddFeedback }) => {
                     className="w-full bg-white/30 text-white placeholder-pink-100 p-2 rounded-lg border-2 border-transparent focus:border-white focus:bg-white/40 outline-none transition-all resize-none text-sm"
                     rows={2}
                     aria-label="Your comment"
+                    disabled={isSubmitting}
                 />
                 <button
                     type="submit"
-                    className="w-full bg-yellow-400 text-yellow-900 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition-colors shadow-md text-sm"
+                    className="w-full bg-yellow-400 text-yellow-900 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition-colors shadow-md text-sm disabled:bg-yellow-200 disabled:cursor-not-allowed"
+                    disabled={isSubmitting}
                 >
-                    إرسال الرأي
+                    {isSubmitting ? 'جاري الإرسال...' : 'إرسال الرأي'}
                 </button>
             </form>
         </div>

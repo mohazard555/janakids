@@ -12,6 +12,7 @@ interface HeaderProps {
     videoCount: number;
     subscriptionUrl: string;
     onAddFeedback: (rating: number, comment: string) => void;
+    isSubmittingFeedback: boolean;
 }
 
 const CameraIcon: React.FC = () => (
@@ -34,7 +35,7 @@ const RefreshIcon: React.FC = () => (
 );
 
 
-const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange, videoCount, subscriptionUrl, onAddFeedback }) => {
+const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange, videoCount, subscriptionUrl, onAddFeedback, isSubmittingFeedback }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [logoClickCount, setLogoClickCount] = useState(0);
     const [showLoginButton, setShowLoginButton] = useState(false);
@@ -127,7 +128,7 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                         <RefreshIcon />
                         <span>تحديث</span>
                     </button>
-                    <FeedbackForm onAddFeedback={onAddFeedback} />
+                    <FeedbackForm onAddFeedback={onAddFeedback} isSubmitting={isSubmittingFeedback} />
                 </div>
                  {/* Text content will be on the left in RTL */}
                 <div className="flex-1 text-right mr-8">
