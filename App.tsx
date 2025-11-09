@@ -65,7 +65,6 @@ const GIST_ID = getGistId(GIST_RAW_URL);
 // Using a unique namespace for the central view counter based on the Gist ID
 const COUNTER_NAMESPACE = GIST_ID ? `janakids-${GIST_ID}` : null;
 
-
 const App: React.FC = () => {
   const defaultAdSettings: AdSettings = { 
     ads: [],
@@ -93,6 +92,7 @@ const App: React.FC = () => {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
+  const [timeoutMessage, setTimeoutMessage] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,6 +100,7 @@ const App: React.FC = () => {
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [showAdsPanel, setShowAdsPanel] = useState(false);
   const contentReadyRef = useRef(false);
+  const startupTimeout = useRef(false);
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
@@ -184,7 +185,6 @@ const App: React.FC = () => {
               localData = JSON.parse(localDataRaw);
               setDataFromRemote(localData);
               contentReadyRef.current = true;
-              setIsInitialLoad(false); // Render the app UI immediately
           } catch (e) {
               console.error("Corrupt local data, removing.", e);
               localStorage.removeItem('janaKidsContent');
@@ -193,11 +193,15 @@ const App: React.FC = () => {
 
       // 2. Always fetch from the network to get the latest version.
       if (GIST_RAW_URL) {
-          if (!contentReadyRef.current) setIsSyncing(false); // Don't show sync indicator on top of loading screen
-          else setIsSyncing(true);
+          if (contentReadyRef.current) setIsSyncing(true);
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 20000); // 20-second timeout
 
           try {
-              const response = await fetch(`${GIST_RAW_URL}?v=${new Date().getTime()}`);
+              const response = await fetch(`${GIST_RAW_URL}?v=${new Date().getTime()}`, { signal: controller.signal });
+              clearTimeout(timeoutId);
+
               if (!response.ok) throw new Error(`فشل الاتصال بالخادم (Status: ${response.status})`);
               
               const remoteData = await response.json();
@@ -223,17 +227,25 @@ const App: React.FC = () => {
               contentReadyRef.current = true;
 
           } catch (error) {
+              clearTimeout(timeoutId);
               console.error("Failed to fetch from Gist:", error);
-              const errorMessage = (error as Error).message || 'فشل تحميل البيانات، تأكد من اتصالك بالانترنت وحاول تحديث الصفحة.';
               
-              if (!contentReadyRef.current) {
-                  setLoadingError(errorMessage);
+              if ((error as Error).name === 'AbortError') {
+                  startupTimeout.current = true;
+                  setTimeoutMessage('يبدو أن الاتصال بالإنترنت بطيء قليلاً، نرجو الانتظار للحظات...');
               } else {
-                  setToastMessage({ text: 'فشل تحميل آخر التحديثات.', type: 'error' });
+                  const errorMessage = (error as Error).message || 'فشل تحميل البيانات، تأكد من اتصالك بالانترنت وحاول تحديث الصفحة.';
+                  if (!contentReadyRef.current) {
+                      setLoadingError(errorMessage);
+                  } else {
+                      setToastMessage({ text: 'فشل تحميل آخر التحديثات.', type: 'error' });
+                  }
               }
           } finally {
               setIsSyncing(false);
-              setIsInitialLoad(false); // Hide loading screen regardless of outcome
+              if (!startupTimeout.current) {
+                  setIsInitialLoad(false);
+              }
           }
       } else {
           console.warn("GIST_RAW_URL is not set in App.tsx. Cannot load data.");
@@ -740,8 +752,8 @@ const App: React.FC = () => {
     ? videos
     : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id));
 
-  if (isInitialLoad) {
-    return <LoadingScreen />;
+  if (isInitialLoad && !contentReadyRef.current) {
+    return <LoadingScreen timeoutMessage={timeoutMessage} />;
   }
 
   if (loadingError) {
@@ -774,7 +786,6 @@ const App: React.FC = () => {
       />
 
       <main className="container mx-auto p-4 md:p-8">
-        
         <div className="flex items-center mb-8 relative">
             <SearchBar query={searchQuery} onQueryChange={handleSearchChange} />
             <NotificationBell count={newVideoIds.length} onClick={() => setShowNotificationsPanel(p => !p)} />

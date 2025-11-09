@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 
 const SunIcon: React.FC = () => (
@@ -14,24 +15,36 @@ const messages = [
   "نرسم لكم أجمل الألوان...",
 ];
 
-const LoadingScreen: React.FC = () => {
+interface LoadingScreenProps {
+    timeoutMessage?: string | null;
+}
+
+const LoadingScreen: React.FC<LoadingScreenProps> = ({ timeoutMessage }) => {
     const [messageIndex, setMessageIndex] = useState(0);
 
     useEffect(() => {
-        const intervalId = setInterval(() => {
-            setMessageIndex(prevIndex => (prevIndex + 1) % messages.length);
-        }, 2500); // Change message every 2.5 seconds
+        if (!timeoutMessage) {
+            const intervalId = setInterval(() => {
+                setMessageIndex(prevIndex => (prevIndex + 1) % messages.length);
+            }, 2500); // Change message every 2.5 seconds
 
-        return () => clearInterval(intervalId);
-    }, []);
+            return () => clearInterval(intervalId);
+        }
+    }, [timeoutMessage]);
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-sky-50 text-sky-600 transition-opacity duration-500">
             <SunIcon />
             <div className="h-10 text-center">
-                <p className="text-2xl font-bold mt-8 animate-fade-in-up" key={messageIndex}>
-                    {messages[messageIndex]}
-                </p>
+                {timeoutMessage ? (
+                     <p className="text-2xl font-bold mt-8 text-sky-700">
+                        {timeoutMessage}
+                    </p>
+                ) : (
+                    <p className="text-2xl font-bold mt-8 animate-fade-in-up" key={messageIndex}>
+                        {messages[messageIndex]}
+                    </p>
+                )}
             </div>
             <style>
             {`
