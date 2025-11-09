@@ -21,7 +21,8 @@ import AdsPanel from './components/AdsPanel';
 import AdvertiserCta from './components/AdvertiserCta';
 import SyncIndicator from './components/SyncIndicator';
 import LoadingScreen from './components/LoadingScreen';
-import FeedbackDisplay from './components/FeedbackDisplay';
+import FeedbackIcon from './components/FeedbackIcon';
+import FeedbackPanel from './components/FeedbackPanel';
 import type { Video, Playlist, Activity, AdSettings, Ad, Feedback } from './types';
 
 
@@ -100,6 +101,7 @@ const App: React.FC = () => {
   const [newVideoIds, setNewVideoIds] = useState<number[]>([]);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [showAdsPanel, setShowAdsPanel] = useState(false);
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
   const contentReadyRef = useRef(false);
   const startupTimeout = useRef(false);
 
@@ -819,6 +821,10 @@ const App: React.FC = () => {
                     {showAdsPanel && <AdsPanel ads={adSettings.ads} onClose={() => setShowAdsPanel(false)} />}
                 </div>
             )}
+            <div className="ml-2 relative">
+                <FeedbackIcon count={feedback.length} onClick={() => setShowFeedbackPanel(p => !p)} />
+                {showFeedbackPanel && <FeedbackPanel feedback={feedback} onClose={() => setShowFeedbackPanel(false)} />}
+            </div>
         </div>
 
         {isLoggedIn && (
@@ -893,8 +899,6 @@ const App: React.FC = () => {
                 </div>
             </div>
         )}
-
-        <FeedbackDisplay feedback={feedback} />
       </main>
       
       {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}
