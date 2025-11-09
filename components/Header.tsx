@@ -18,6 +18,12 @@ const CameraIcon: React.FC = () => (
     </svg>
 );
 
+const RefreshIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transition-transform duration-500 ease-in-out group-hover:rotate-180" viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+    </svg>
+);
+
 
 const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange, videoCount, subscriptionUrl }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -71,7 +77,7 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
         <header className="bg-gradient-to-r from-pink-400 to-yellow-300 text-white p-6 shadow-lg relative">
             <div className="container mx-auto flex justify-between items-center">
                  {/* Logo uploader will be on the right in RTL */}
-                <div>
+                <div className="flex flex-col items-center">
                     {isLoggedIn && (
                         <input
                             type="file"
@@ -95,6 +101,15 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                                  {isLoggedIn && <span className="text-xs mt-1 block text-pink-100 group-hover:text-white">أضف شعار</span>}
                             </div>
                         )}
+                    </button>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="group mt-2 flex items-center text-sm font-semibold text-pink-100 hover:text-white transition-colors"
+                        title="تحديث الصفحة"
+                        aria-label="تحديث الصفحة"
+                    >
+                        <RefreshIcon />
+                        <span className="mr-1">تحديث</span>
                     </button>
                 </div>
                  {/* Text content will be on the left in RTL */}

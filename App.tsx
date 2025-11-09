@@ -21,6 +21,7 @@ import AdIcon from './components/AdIcon';
 import AdsPanel from './components/AdsPanel';
 import AdvertiserCta from './components/AdvertiserCta';
 import SyncIndicator from './components/SyncIndicator';
+import LoadingScreen from './components/LoadingScreen';
 import type { Video, Playlist, Activity, AdSettings, Ad } from './types';
 
 
@@ -90,7 +91,7 @@ const App: React.FC = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | 'all'>('all');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
@@ -98,6 +99,7 @@ const App: React.FC = () => {
   const [newVideoIds, setNewVideoIds] = useState<number[]>([]);
   const [showNotificationsPanel, setShowNotificationsPanel] = useState(false);
   const [showAdsPanel, setShowAdsPanel] = useState(false);
+  const contentReadyRef = useRef(false);
 
   // Settings State
   const [credentials, setCredentials] = useState({ username: "admin", password: "password" });
@@ -156,8 +158,7 @@ const App: React.FC = () => {
   // Effect for initial data loading from Gist with localStorage caching.
   useEffect(() => {
     const loadInitialData = async () => {
-      setIsLoading(true);
-      setLoadingError(null); // Reset error state on every load attempt
+      setLoadingError(null);
 
       // Load admin-specific settings from localStorage
       const savedCredentials = localStorage.getItem('janaKidsCredentials');
@@ -173,7 +174,6 @@ const App: React.FC = () => {
       }
 
       // --- Optimized Loading Strategy ---
-      let initialDataLoaded = false;
       const localDataRaw = localStorage.getItem('janaKidsContent');
       let localData: any = null;
       
@@ -183,7 +183,8 @@ const App: React.FC = () => {
               console.log("Applying data from localStorage cache for instant UI.");
               localData = JSON.parse(localDataRaw);
               setDataFromRemote(localData);
-              initialDataLoaded = true;
+              contentReadyRef.current = true;
+              setIsInitialLoad(false); // Render the app UI immediately
           } catch (e) {
               console.error("Corrupt local data, removing.", e);
               localStorage.removeItem('janaKidsContent');
@@ -192,6 +193,9 @@ const App: React.FC = () => {
 
       // 2. Always fetch from the network to get the latest version.
       if (GIST_RAW_URL) {
+          if (!contentReadyRef.current) setIsSyncing(false); // Don't show sync indicator on top of loading screen
+          else setIsSyncing(true);
+
           try {
               const response = await fetch(`${GIST_RAW_URL}?v=${new Date().getTime()}`);
               if (!response.ok) throw new Error(`فشل الاتصال بالخادم (Status: ${response.status})`);
@@ -213,33 +217,31 @@ const App: React.FC = () => {
               
               const mergedDataRaw = JSON.stringify(remoteData);
 
-              // Update state only if there's new data or it's the very first load
-              if (mergedDataRaw !== localDataRaw || !initialDataLoaded) {
-                  console.log("Applying new/updated data.");
-                  setDataFromRemote(remoteData);
-                  localStorage.setItem('janaKidsContent', mergedDataRaw);
-              } else {
-                  console.log("Fetched data is same as local cache. No update needed.");
-              }
-              initialDataLoaded = true;
+              // Update state and local storage with fresh data
+              setDataFromRemote(remoteData);
+              localStorage.setItem('janaKidsContent', mergedDataRaw);
+              contentReadyRef.current = true;
+
           } catch (error) {
               console.error("Failed to fetch from Gist:", error);
               const errorMessage = (error as Error).message || 'فشل تحميل البيانات، تأكد من اتصالك بالانترنت وحاول تحديث الصفحة.';
               
-              if (!initialDataLoaded) {
+              if (!contentReadyRef.current) {
                   setLoadingError(errorMessage);
               } else {
                   setToastMessage({ text: 'فشل تحميل آخر التحديثات.', type: 'error' });
               }
+          } finally {
+              setIsSyncing(false);
+              setIsInitialLoad(false); // Hide loading screen regardless of outcome
           }
       } else {
           console.warn("GIST_RAW_URL is not set in App.tsx. Cannot load data.");
-          if (!initialDataLoaded) {
+          if (!contentReadyRef.current) {
             setLoadingError("مصدر بيانات الموقع غير محدد في الكود. يرجى مراجعة المطور.");
           }
+          setIsInitialLoad(false);
       }
-      
-      setIsLoading(false);
     };
 
     loadInitialData();
@@ -248,7 +250,7 @@ const App: React.FC = () => {
   // Effect for fetching live view counts in the background AFTER initial render
   useEffect(() => {
     // This effect should only run once after the initial data is loaded.
-    if (isLoading || liveViewsFetchedRef.current) {
+    if (isInitialLoad || liveViewsFetchedRef.current) {
       return;
     }
     
@@ -307,14 +309,15 @@ const App: React.FC = () => {
         }
     };
     
-    fetchLiveViewCounts();
+    // Delay this slightly to not interfere with initial paint
+    setTimeout(fetchLiveViewCounts, 1000);
 
-  }, [isLoading, baseVideos, baseShorts, searchQuery]);
+  }, [isInitialLoad, baseVideos, baseShorts, searchQuery]);
 
 
   // Effect for syncing data to localStorage and Gist
   useEffect(() => {
-    if (isLoading) {
+    if (isInitialLoad) {
       return;
     }
 
@@ -415,12 +418,12 @@ const App: React.FC = () => {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings, baseVideos, baseShorts, isLoggedIn, isLoading]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings, baseVideos, baseShorts, isLoggedIn, isInitialLoad]);
 
 
   useEffect(() => {
-    if(!isLoading) localStorage.setItem('janaKidsCredentials', JSON.stringify(credentials));
-  }, [credentials, isLoading]);
+    if(!isInitialLoad) localStorage.setItem('janaKidsCredentials', JSON.stringify(credentials));
+  }, [credentials, isInitialLoad]);
 
   const handleConfigureAndSync = async (settings: GistSyncSettings) => {
     setIsSyncing(true);
@@ -737,12 +740,8 @@ const App: React.FC = () => {
     ? videos
     : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id));
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-sky-50 text-2xl font-bold text-sky-600">
-        ...جاري تحميل عالم جنى كيدز
-      </div>
-    );
+  if (isInitialLoad) {
+    return <LoadingScreen />;
   }
 
   if (loadingError) {
