@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import VideoCard from './components/VideoCard';
@@ -22,7 +21,8 @@ import AdsPanel from './components/AdsPanel';
 import AdvertiserCta from './components/AdvertiserCta';
 import SyncIndicator from './components/SyncIndicator';
 import LoadingScreen from './components/LoadingScreen';
-import type { Video, Playlist, Activity, AdSettings, Ad } from './types';
+import FeedbackDisplay from './components/FeedbackDisplay';
+import type { Video, Playlist, Activity, AdSettings, Ad, Feedback } from './types';
 
 
 // ====================================================================================
@@ -84,6 +84,7 @@ const App: React.FC = () => {
   const [channelDescription, setChannelDescription] = useState('قناة جنى كيدز تقدم لكم أجمل قصص الأطفال التعليمية والترفيهية. انضموا إلينا في مغامرات شيقة وممتعة!');
   const [subscriptionUrl, setSubscriptionUrl] = useState<string>('');
   const [adSettings, setAdSettings] = useState<AdSettings>(defaultAdSettings);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
 
   // App Control State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -145,6 +146,7 @@ const App: React.FC = () => {
     setPlaylists(data.playlists ?? []);
     setChannelDescription(data.channelDescription ?? channelDescription);
     setSubscriptionUrl(data.subscriptionUrl ?? '');
+    setFeedback(data.feedback ?? []);
 
     const migratedAdSettings = migrateAdSettings(data.adSettings);
     setAdSettings(migratedAdSettings);
@@ -342,6 +344,7 @@ const App: React.FC = () => {
         channelDescription,
         subscriptionUrl,
         adSettings,
+        feedback,
     };
 
     // Always save the latest state to local cache for persistence immediately.
@@ -430,7 +433,7 @@ const App: React.FC = () => {
         clearTimeout(syncTimerRef.current);
       }
     };
-  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, syncSettings, baseVideos, baseShorts, isLoggedIn, isInitialLoad]);
+  }, [videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, feedback, syncSettings, baseVideos, baseShorts, isLoggedIn, isInitialLoad]);
 
 
   useEffect(() => {
@@ -445,7 +448,7 @@ const App: React.FC = () => {
         if (!settings.githubToken) throw new Error("رمز GitHub مطلوب للمزامنة.");
 
         const contentToSync = {
-            videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings,
+            videos, shorts, activities, channelLogo, playlists, channelDescription, subscriptionUrl, adSettings, feedback,
         };
 
         const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
@@ -506,6 +509,7 @@ const App: React.FC = () => {
             channelDescription,
             subscriptionUrl,
             adSettings,
+            feedback,
         };
         const jsonString = JSON.stringify(dataToExport, null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
@@ -748,6 +752,22 @@ const App: React.FC = () => {
     setVideos(filtered);
   };
 
+  const handleAddFeedback = (rating: number, comment: string) => {
+    const newFeedback: Feedback = {
+        id: Date.now(),
+        rating,
+        comment,
+        createdAt: new Date().toISOString(),
+    };
+    setFeedback(prev => [newFeedback, ...prev]);
+    setToastMessage({ text: 'شكراً لمشاركتنا رأيك!', type: 'success' });
+  };
+
+  const handleDeleteFeedback = (feedbackId: number) => {
+      setFeedback(prev => prev.filter(f => f.id !== feedbackId));
+  };
+
+
   const filteredVideos = selectedPlaylistId === 'all'
     ? videos
     : videos.filter(v => playlists.find(p => p.id === selectedPlaylistId)?.videoIds.includes(v.id));
@@ -783,6 +803,7 @@ const App: React.FC = () => {
         onDescriptionChange={setChannelDescription}
         videoCount={baseVideos.length}
         subscriptionUrl={subscriptionUrl}
+        onAddFeedback={handleAddFeedback}
       />
 
       <main className="container mx-auto p-4 md:p-8">
@@ -818,6 +839,8 @@ const App: React.FC = () => {
                         currentAdSettings={adSettings}
                         onExportData={handleExportData}
                         onImportData={handleImportData}
+                        currentFeedback={feedback}
+                        onDeleteFeedback={handleDeleteFeedback}
                     />
                 </div>
             </div>
@@ -870,6 +893,8 @@ const App: React.FC = () => {
                 </div>
             </div>
         )}
+
+        <FeedbackDisplay feedback={feedback} />
       </main>
       
       {adSettings.ctaEnabled && <AdvertiserCta settings={adSettings} />}

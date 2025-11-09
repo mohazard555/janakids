@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { AdSettings, Ad } from '../types';
+import type { AdSettings, Ad, Feedback } from '../types';
 
 interface GistSyncSettings {
     githubToken: string;
@@ -16,6 +16,8 @@ interface AdminSettingsProps {
     currentAdSettings: AdSettings;
     onExportData: () => void;
     onImportData: (file: File) => void;
+    currentFeedback: Feedback[];
+    onDeleteFeedback: (feedbackId: number) => void;
 }
 
 const AdminSettings: React.FC<AdminSettingsProps> = ({ 
@@ -28,7 +30,9 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     onAdSettingsChange,
     currentAdSettings,
     onExportData,
-    onImportData
+    onImportData,
+    currentFeedback,
+    onDeleteFeedback
 }) => {
     // General Settings State
     const [username, setUsername] = useState(currentCredentials.username);
@@ -53,6 +57,21 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     const [adImagePreview, setAdImagePreview] = useState<string | null>(null);
 
     const importFileInputRef = useRef<HTMLInputElement>(null);
+
+    const StarRating: React.FC<{ rating: number }> = ({ rating }) => (
+        <div className="flex">
+            {[...Array(5)].map((_, i) => (
+                <svg
+                    key={i}
+                    className={`w-4 h-4 ${i < rating ? 'text-yellow-400' : 'text-gray-300'}`}
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                >
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+            ))}
+        </div>
+    );
 
 
     useEffect(() => {
@@ -203,6 +222,12 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         event.target.value = ''; // Reset to allow re-importing same file
     };
 
+    const handleDeleteFeedback = (id: number) => {
+        if (window.confirm('هل أنت متأكد من حذف هذا الرأي؟')) {
+            onDeleteFeedback(id);
+        }
+    };
+
 
     return (
         <div className="bg-white p-6 rounded-2xl shadow-md h-full flex flex-col justify-between">
@@ -298,6 +323,28 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                             <input id="cta-link" type="url" value={ctaLink} onChange={handleCtaLinkChange} placeholder="https://example.com/advertise" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-green-400 transition" dir="ltr" />
                         </div>
                     </fieldset>
+                </div>
+
+                <div className="pt-6 border-t-2 border-dashed border-gray-200 mt-8">
+                    <h3 className="text-xl font-bold text-center text-blue-700 mb-4">آراء الزوار</h3>
+                    <div className="border border-gray-300 p-4 rounded-lg space-y-3 max-h-60 overflow-y-auto pr-2">
+                        {currentFeedback && currentFeedback.length > 0 ? (
+                            [...currentFeedback].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(fb => (
+                                <div key={fb.id} className="p-2 bg-gray-50 rounded-md">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <StarRating rating={fb.rating} />
+                                        <div className="flex items-center">
+                                            <span className="text-xs text-gray-500 ml-3">{new Date(fb.createdAt).toLocaleString('ar-EG')}</span>
+                                            <button type="button" onClick={() => handleDeleteFeedback(fb.id)} className="text-xs bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded-md font-semibold">حذف</button>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-gray-800">{fb.comment}</p>
+                                </div>
+                            ))
+                        ) : (
+                             <p className="text-center text-gray-500 py-4">لا توجد آراء حالياً.</p>
+                        )}
+                    </div>
                 </div>
             </div>
             

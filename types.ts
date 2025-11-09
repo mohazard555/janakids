@@ -32,3 +32,10 @@ export interface AdSettings {
   ctaText: string;
   ctaLink: string;
 }
+
+export interface Feedback {
+  id: number;
+  rating: number; // 1 to 5
+  comment: string;
+  createdAt: string; // ISO string date
+}

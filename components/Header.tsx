@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import FeedbackForm from './FeedbackForm';
 
 interface HeaderProps {
     logo: string | null;
@@ -10,6 +11,7 @@ interface HeaderProps {
     onDescriptionChange: (description: string) => void;
     videoCount: number;
     subscriptionUrl: string;
+    onAddFeedback: (rating: number, comment: string) => void;
 }
 
 const CameraIcon: React.FC = () => (
@@ -18,14 +20,21 @@ const CameraIcon: React.FC = () => (
     </svg>
 );
 
+const EditIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+        <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+    </svg>
+);
+
 const RefreshIcon: React.FC = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transition-transform duration-500 ease-in-out group-hover:rotate-180" viewBox="0 0 20 20" fill="currentColor">
-      <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
     </svg>
 );
 
 
-const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange, videoCount, subscriptionUrl }) => {
+const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLoginClick, onLogoutClick, channelDescription, onDescriptionChange, videoCount, subscriptionUrl, onAddFeedback }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [logoClickCount, setLogoClickCount] = useState(0);
     const [showLoginButton, setShowLoginButton] = useState(false);
@@ -75,9 +84,9 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
 
     return (
         <header className="bg-gradient-to-r from-pink-400 to-yellow-300 text-white p-6 shadow-lg relative">
-            <div className="container mx-auto flex justify-between items-center">
+            <div className="container mx-auto flex justify-between items-start">
                  {/* Logo uploader will be on the right in RTL */}
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center w-48">
                     {isLoggedIn && (
                         <input
                             type="file"
@@ -94,7 +103,15 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                         aria-label={isLoggedIn ? "Change channel logo" : "Channel logo (click 5 times for admin login)"}
                     >
                         {logo ? (
-                            <img src={logo} alt="Channel Logo" className="w-full h-full rounded-full object-cover" />
+                            <div className="relative w-full h-full">
+                                <img src={logo} alt="Channel Logo" className="w-full h-full rounded-full object-cover" />
+                                {isLoggedIn && (
+                                    <div className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                        <EditIcon />
+                                        <span className="text-xs text-white mt-1 font-bold">تغيير الشعار</span>
+                                    </div>
+                                )}
+                            </div>
                         ) : (
                             <div className="text-center">
                                 <CameraIcon />
@@ -104,13 +121,13 @@ const Header: React.FC<HeaderProps> = ({ logo, onLogoUpload, isLoggedIn, onLogin
                     </button>
                     <button
                         onClick={() => window.location.reload()}
-                        className="group mt-2 flex items-center text-sm font-semibold text-pink-100 hover:text-white transition-colors"
-                        title="تحديث الصفحة"
-                        aria-label="تحديث الصفحة"
+                        className="mt-4 flex items-center justify-center px-5 py-2 bg-white/20 hover:bg-white/40 text-white font-bold rounded-full transition-colors duration-300"
+                        aria-label="Refresh the page"
                     >
                         <RefreshIcon />
-                        <span className="mr-1">تحديث</span>
+                        <span>تحديث</span>
                     </button>
+                    <FeedbackForm onAddFeedback={onAddFeedback} />
                 </div>
                  {/* Text content will be on the left in RTL */}
                 <div className="flex-1 text-right mr-8">
