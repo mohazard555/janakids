@@ -48,13 +48,16 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
     const [password, setPassword] = useState(currentCredentials.password);
     const [subscriptionUrl, setSubscriptionUrl] = useState(currentSubscriptionUrl);
 
-    // Sync State
+    // Main Sync State
     const [githubToken, setGithubToken] = useState('');
-    const [isTesting, setIsTesting] = useState(false);
-    
+    const [mainSyncStatus, setMainSyncStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+    const [mainSyncError, setMainSyncError] = useState<string | null>(null);
+
     // Feedback Sync State
     const [feedbackGistUrl, setFeedbackGistUrl] = useState('');
     const [feedbackGistToken, setFeedbackGistToken] = useState('');
+    const [feedbackTestStatus, setFeedbackTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+    const [feedbackTestError, setFeedbackTestError] = useState<string | null>(null);
 
     // Ads Management State
     const [localAds, setLocalAds] = useState<Ad[]>([]);
@@ -115,22 +118,47 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
         alert('تم تحديث الإعدادات العامة بنجاح!');
     };
 
-    const handleFeedbackSyncSubmit = (e: React.FormEvent) => {
+    const getGistId = (url: string): string | null => {
+        if (!url) return null;
+        const match = url.match(/gist\.github(?:usercontent)?\.com\/[^\/]+\/([a-f0-9]+)/);
+        return match ? match[1] : null;
+    };
+
+    const handleFeedbackSyncSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        onFeedbackSyncSettingsChange({ url: feedbackGistUrl, token: feedbackGistToken });
-        alert('تم حفظ إعدادات مزامنة الآراء! ستظهر الآراء الجديدة الآن بشكل مباشر.');
+        setFeedbackTestStatus('testing');
+        setFeedbackTestError(null);
+        try {
+            const gistId = getGistId(feedbackGistUrl);
+            if (!gistId) throw new Error("رابط Gist غير صالح. يرجى التأكد من نسخ الرابط الصحيح.");
+            if (!feedbackGistToken.trim()) throw new Error("رمز GitHub مطلوب.");
+            const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
+            const AUTH_HEADERS = { 'Authorization': `token ${feedbackGistToken}`, 'Accept': 'application/vnd.github.v3+json' };
+            const response = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
+            const data = await response.json();
+            if (!response.ok) { throw new Error(data.message || `حدث خطأ: Status ${response.status}`); }
+            const FEEDBACK_FILENAME = 'jana_kids_feedback.json';
+            if (!data.files || !data.files[FEEDBACK_FILENAME]) {
+                throw new Error(`لم يتم العثور على الملف '${FEEDBACK_FILENAME}' في هذا الـ Gist. الرجاء التأكد من التسمية.`);
+            }
+            setFeedbackTestStatus('success');
+            onFeedbackSyncSettingsChange({ url: feedbackGistUrl, token: feedbackGistToken });
+        } catch (error) {
+            setFeedbackTestStatus('error');
+            setFeedbackTestError((error as Error).message);
+        }
     };
     
-    // ... Other handlers (handleSyncSubmit, ad management, etc.) remain largely unchanged ...
     const handleSyncSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsTesting(true);
+        setMainSyncStatus('testing');
+        setMainSyncError(null);
         try {
             await onConfigureAndSync({ githubToken });
+            setMainSyncStatus('success');
         } catch (error) {
-           console.log("Configuration and sync failed, user was notified.");
-        } finally {
-            setIsTesting(false);
+           setMainSyncStatus('error');
+           setMainSyncError((error as Error).message);
         }
     };
     
@@ -251,8 +279,26 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                                 <input id="feedback-gist-token" type="password" value={feedbackGistToken} onChange={(e) => setFeedbackGistToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" dir="ltr" autoComplete="new-password" />
                             </div>
                         </fieldset>
-                        <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-lg text-lg">
-                            حفظ إعدادات الآراء
+                        
+                        {feedbackTestStatus !== 'idle' && (
+                            <div className={`mt-3 p-3 rounded-md text-sm text-center font-semibold ${
+                                feedbackTestStatus === 'testing' ? 'bg-gray-100 text-gray-700' :
+                                feedbackTestStatus === 'success' ? 'bg-green-100 text-green-800' :
+                                'bg-red-100 text-red-800'
+                            }`}>
+                                {feedbackTestStatus === 'testing' && 'جاري اختبار الاتصال...'}
+                                {feedbackTestStatus === 'success' && 'تم الربط بنجاح! الإعدادات حُفظت.'}
+                                {feedbackTestStatus === 'error' && (
+                                    <>
+                                        <strong className="block">فشل الاتصال: {feedbackTestError}</strong>
+                                        <p className="font-normal mt-1">الرجاء مراجعة الرابط والرمز والمحاولة مرة أخرى. تأكد من أن الرمز من نوع "Classic" ويملك صلاحية "gist".</p>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-300 shadow-lg text-lg disabled:bg-blue-300" disabled={feedbackTestStatus === 'testing'}>
+                            {feedbackTestStatus === 'testing' ? 'جاري الاختبار...' : 'حفظ واختبار ربط الآراء'}
                         </button>
                     </form>
                 </div>
@@ -295,12 +341,25 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                         <label htmlFor="github-token" className="block text-right text-gray-700 font-semibold mb-1">GitHub Personal Access Token</label>
                         <input id="github-token" type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" autoComplete="new-password" />
                     </div>
+
+                    {mainSyncStatus !== 'idle' && (
+                        <div className={`mt-3 p-3 rounded-md text-sm text-center font-semibold ${
+                            mainSyncStatus === 'testing' ? 'bg-gray-100 text-gray-700' :
+                            mainSyncStatus === 'success' ? 'bg-green-100 text-green-800' :
+                            'bg-red-100 text-red-800'
+                        }`}>
+                            {mainSyncStatus === 'testing' && 'جاري اختبار الاتصال...'}
+                            {mainSyncStatus === 'success' && 'تم الربط بنجاح! الإعدادات حُفظت.'}
+                            {mainSyncStatus === 'error' && `فشل الاتصال: ${mainSyncError}`}
+                        </div>
+                    )}
+
                     <button 
                         type="submit" 
                         className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition-colors duration-300 shadow-lg text-md disabled:bg-sky-300 disabled:cursor-not-allowed"
-                        disabled={isTesting}
+                        disabled={mainSyncStatus === 'testing'}
                     >
-                        {isTesting ? '...جاري الربط' : 'ربط رمز المزامنة الرئيسي'}
+                        {mainSyncStatus === 'testing' ? '...جاري الربط' : 'حفظ واختبار المزامنة الرئيسية'}
                     </button>
                 </form>
             </div>
