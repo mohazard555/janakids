@@ -599,23 +599,24 @@ const App: React.FC = () => {
       if (!url || !token) throw new Error("إعدادات مزامنة الآراء غير مكتملة.");
       const gistId = getGistId(url);
       if (!gistId) throw new Error("رابط Gist للآراء غير صالح.");
+
       const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
       const AUTH_HEADERS = { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' };
-      
-      const getResponse = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
-      if (!getResponse.ok) throw new Error("فشل الوصول لبيانات الآراء.");
-      const gistData = await getResponse.json();
-      const filename = Object.keys(gistData.files)[0];
-      if (!filename) throw new Error("لم يتم العثور على ملف في Gist الآراء.");
+      const FEEDBACK_FILENAME = 'jana_kids_feedback.json'; // Use the standard filename from instructions
 
       const patchResponse = await fetch(GIST_API_URL, {
           method: 'PATCH',
           headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-              files: { [filename]: { content: JSON.stringify(newFeedbackArray, null, 2) } },
+              files: { [FEEDBACK_FILENAME]: { content: JSON.stringify(newFeedbackArray, null, 2) } },
           }),
       });
-      if (!patchResponse.ok) throw new Error("فشل تحديث بيانات الآراء.");
+
+      if (!patchResponse.ok) {
+          const errorData = await patchResponse.json().catch(() => ({ message: `Status ${patchResponse.status}` }));
+          console.error("Gist patch failed:", errorData);
+          throw new Error(`فشل تحديث بيانات الآراء: ${errorData.message}`);
+      }
   };
 
   const handleAddFeedback = async (rating: number, comment: string) => {
