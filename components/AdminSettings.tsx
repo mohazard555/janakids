@@ -132,15 +132,38 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
             const gistId = getGistId(feedbackGistUrl);
             if (!gistId) throw new Error("رابط Gist غير صالح. يرجى التأكد من نسخ الرابط الصحيح.");
             if (!feedbackGistToken.trim()) throw new Error("رمز GitHub مطلوب.");
+    
             const GIST_API_URL = `https://api.github.com/gists/${gistId}`;
             const AUTH_HEADERS = { 'Authorization': `token ${feedbackGistToken}`, 'Accept': 'application/vnd.github.v3+json' };
-            const response = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
-            const data = await response.json();
-            if (!response.ok) { throw new Error(data.message || `حدث خطأ: Status ${response.status}`); }
             const FEEDBACK_FILENAME = 'jana_kids_feedback.json';
-            if (!data.files || !data.files[FEEDBACK_FILENAME]) {
-                throw new Error(`لم يتم العثور على الملف '${FEEDBACK_FILENAME}' في هذا الـ Gist. الرجاء التأكد من التسمية.`);
+    
+            // Step 1: GET to verify read access and file existence
+            const getResponse = await fetch(GIST_API_URL, { headers: AUTH_HEADERS });
+            const getData = await getResponse.json();
+            if (!getResponse.ok) {
+                throw new Error(getData.message || `فشل الاتصال الأولي (Status: ${getResponse.status})`);
             }
+            if (!getData.files || !getData.files[FEEDBACK_FILENAME]) {
+                throw new Error(`لم يتم العثور على الملف '${FEEDBACK_FILENAME}' في هذا الـ Gist. الرجاء التأكد من التسمية الصحيحة.`);
+            }
+            const currentContent = getData.files[FEEDBACK_FILENAME].content;
+    
+            // Step 2: PATCH with same content to verify write access
+            const patchResponse = await fetch(GIST_API_URL, {
+                method: 'PATCH',
+                headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    files: {
+                        [FEEDBACK_FILENAME]: { content: currentContent || '[]' }
+                    }
+                })
+            });
+    
+            if (!patchResponse.ok) {
+                const patchData = await patchResponse.json().catch(() => ({}));
+                throw new Error(patchData.message || `فشل اختبار الكتابة (Status: ${patchResponse.status})`);
+            }
+    
             setFeedbackTestStatus('success');
             onFeedbackSyncSettingsChange({ url: feedbackGistUrl, token: feedbackGistToken });
         } catch (error) {
@@ -291,7 +314,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                                 {feedbackTestStatus === 'error' && (
                                     <>
                                         <strong className="block">فشل الاتصال: {feedbackTestError}</strong>
-                                        <p className="font-normal mt-1">الرجاء مراجعة الرابط والرمز والمحاولة مرة أخرى. تأكد من أن الرمز من نوع "Classic" ويملك صلاحية "gist".</p>
+                                        <p className="font-normal mt-1">الرجاء مراجعة الرابط والرمز والمحاولة مرة أخرى. تأكد من أن الرمز من نوع "Classic" ويملك صلاحية "gist" للكتابة.</p>
                                     </>
                                 )}
                             </div>
