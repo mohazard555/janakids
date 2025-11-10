@@ -117,7 +117,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isAdmin, playlists, onAddT
                 <ShareIcon />
                 </button>
                 {showShareOptions && (
-                    <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 z-20 animate-fade-in-fast p-2 space-y-1">
+                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 z-20 animate-fade-in-fast p-2 space-y-1">
                         <a href={`https://api.whatsapp.com/send?text=${shareText}%20${shareUrl}`} target="_blank" rel="noopener noreferrer" className="flex items-center w-full text-right p-2 rounded-md hover:bg-gray-100 text-gray-700 transition-colors">
                             <WhatsAppIcon /> <span className="mr-3 flex-1">واتساب</span>
                         </a>
