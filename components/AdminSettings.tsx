@@ -166,7 +166,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                 const patchData = await patchResponse.json().catch(() => ({}));
                 let detailedErrorMessage = patchData.message || `فشل اختبار الكتابة (Status: ${patchResponse.status})`;
                 if (patchResponse.status === 403 || patchResponse.status === 401 || (patchData.message && patchData.message.toLowerCase().includes('credential'))) {
-                     detailedErrorMessage = `فشل الاتصال: Bad credentials. هذا يعني أن الرمز يمكنه قراءة الـ Gist لكنه لا يملك صلاحية التعديل عليه. الرجاء مراجعة الرابط والرمز والمحاولة مرة أخرى. تأكد من أن الرمز من نوع "Classic" ويملك صلاحية "gist" للكتابة.`;
+                     detailedErrorMessage = `Bad credentials. هذا يعني أن الرمز يمكنه قراءة الـ Gist لكنه لا يملك صلاحية التعديل عليه. الرجاء مراجعة الرابط والرمز والمحاولة مرة أخرى. تأكد من أن الرمز من نوع "Classic" ويملك صلاحية "gist" للكتابة.`;
                 }
                 throw new Error(detailedErrorMessage);
             }
@@ -421,24 +421,15 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
             </div>
             
              {/* Data Management & Main Sync */}
-            <div className="pt-6 border-t-2 border-dashed border-gray-200">
-                <h3 className="text-xl font-bold text-center text-purple-700 mb-3">إدارة البيانات</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <button onClick={onExportData} className="bg-purple-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-600 transition-colors">تصدير البيانات (نسخ احتياطي)</button>
-                    <button onClick={handleImportClick} className="bg-purple-100 text-purple-800 font-bold py-3 px-4 rounded-lg hover:bg-purple-200 transition-colors">استيراد البيانات</button>
-                    <input type="file" ref={importFileInputRef} onChange={handleFileImport} className="hidden" accept=".json" />
-                </div>
-            </div>
             <form onSubmit={handleSyncSubmit} className="space-y-4 pt-6 border-t-2 border-dashed border-gray-200">
-                <h3 className="text-xl font-bold text-center text-sky-700 mb-3">مزامنة المحتوى الرئيسي (فيديوهات، قوائم، إلخ)</h3>
+                <h3 className="text-xl font-bold text-center text-purple-700 mb-3">مزامنة المحتوى الرئيسي وإدارة البيانات</h3>
                  <p className="text-gray-600 text-sm mb-4 text-center">
-                    هذا القسم للمحتوى الأساسي. مصدر البيانات محدد في الكود.
+                    هذا القسم للمحتوى الأساسي (فيديوهات، قوائم، إلخ). مصدر البيانات محدد في الكود.
                 </p>
                 <div>
-                    <label htmlFor="github-token" className="block text-right text-gray-700 font-semibold mb-1">GitHub Personal Access Token</label>
-                    <input id="github-token" type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition" dir="ltr" autoComplete="new-password" />
+                    <label htmlFor="github-token" className="block text-right text-gray-700 font-semibold mb-1">GitHub Personal Access Token (للمحتوى الرئيسي)</label>
+                    <input id="github-token" type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="ghp_..." className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition" dir="ltr" autoComplete="new-password" />
                 </div>
-
                 {mainSyncStatus !== 'idle' && (
                     <div className={`mt-3 p-3 rounded-md text-sm text-center font-semibold ${
                         mainSyncStatus === 'testing' ? 'bg-gray-100 text-gray-700' :
@@ -450,14 +441,18 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                         {mainSyncStatus === 'error' && `فشل الاتصال: ${mainSyncError}`}
                     </div>
                 )}
-
-                <button 
+                 <button 
                     type="submit" 
-                    className="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 transition-colors duration-300 shadow-lg text-md disabled:bg-sky-300 disabled:cursor-not-allowed"
+                    className="w-full bg-purple-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-600 transition-colors duration-300 shadow-lg text-md disabled:bg-purple-300 disabled:cursor-not-allowed"
                     disabled={mainSyncStatus === 'testing'}
                 >
                     {mainSyncStatus === 'testing' ? '...جاري الربط' : 'حفظ واختبار المزامنة الرئيسية'}
                 </button>
+                <div className="grid grid-cols-2 gap-4 pt-4">
+                    <button type="button" onClick={onExportData} className="bg-gray-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-600 transition-colors">تصدير البيانات (نسخ احتياطي)</button>
+                    <button type="button" onClick={handleImportClick} className="bg-gray-100 text-gray-800 font-bold py-3 px-4 rounded-lg hover:bg-gray-200 transition-colors">استيراد البيانات</button>
+                    <input type="file" ref={importFileInputRef} onChange={handleFileImport} className="hidden" accept=".json" />
+                </div>
             </form>
         </div>
     );
