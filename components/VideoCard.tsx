@@ -18,6 +18,12 @@ const EyeIcon: React.FC = () => (
     </svg>
 );
 
+const ShareIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />
+    </svg>
+);
+
 
 const VideoCard: React.FC<VideoCardProps> = ({ video, isAdmin, playlists, onAddToPlaylist, onDeleteVideo, onEditVideo, onWatchNowClick }) => {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('');
@@ -35,6 +41,33 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isAdmin, playlists, onAddT
       onDeleteVideo(video.id);
     }
   }
+
+  const handleShare = async () => {
+    const shareData = {
+      title: video.title,
+      text: `شاهد هذا الفيديو الرائع للأطفال: ${video.title}`,
+      url: video.youtubeUrl,
+    };
+    
+    // Use Web Share API if available
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        // This can happen if the user cancels the share. We don't need to show an error.
+        console.log('Share action was cancelled or failed.', err);
+      }
+    } else {
+      // Fallback to clipboard for browsers that don't support the Web Share API
+      try {
+        await navigator.clipboard.writeText(video.youtubeUrl);
+        alert('تم نسخ رابط الفيديو! يمكنك الآن مشاركته.');
+      } catch (copyErr) {
+        console.error('Error copying to clipboard:', copyErr);
+        alert('لم نتمكن من نسخ الرابط، يرجى نسخه يدوياً.');
+      }
+    }
+  };
     
   return (
     <div className="bg-white rounded-2xl shadow-lg overflow-hidden transform hover:scale-105 transition-transform duration-300 ease-in-out flex flex-col">
@@ -48,15 +81,24 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isAdmin, playlists, onAddT
             <span className="font-bold">{video.views.toLocaleString('ar-EG')}</span>
             <EyeIcon />
           </div>
-          <a
-            href={video.youtubeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => onWatchNowClick(video.id)}
-            className="bg-pink-500 text-white font-bold py-2 px-6 rounded-full hover:bg-pink-600 transition-colors duration-300 shadow-md"
-          >
-            مشاهدة الآن
-          </a>
+          <div className="flex items-center space-x-2 space-x-reverse">
+             <a
+              href={video.youtubeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => onWatchNowClick(video.id)}
+              className="bg-pink-500 text-white font-bold py-2 px-6 rounded-full hover:bg-pink-600 transition-colors duration-300 shadow-md"
+            >
+              مشاهدة الآن
+            </a>
+            <button
+              onClick={handleShare}
+              className="bg-sky-500 text-white font-bold p-2 rounded-full hover:bg-sky-600 transition-colors duration-300 shadow-md flex items-center justify-center"
+              aria-label={`مشاركة فيديو: ${video.title}`}
+            >
+              <ShareIcon />
+            </button>
+          </div>
         </div>
         {isAdmin && (
           <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
