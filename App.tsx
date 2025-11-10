@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import VideoCard from './components/VideoCard';
@@ -217,6 +218,15 @@ const App: React.FC = () => {
               if (!response.ok) throw new Error(`فشل الاتصال بالخادم (Status: ${response.status})`);
               
               const remoteData = await response.json();
+
+              // Race condition fix: If user saved settings while fetch was running, preserve them.
+              const latestCachedDataRaw = localStorage.getItem('janaKidsContent');
+              if (latestCachedDataRaw) {
+                  const latestCachedData = JSON.parse(latestCachedDataRaw);
+                  if (latestCachedData.feedbackSyncSettings) {
+                      remoteData.feedbackSyncSettings = latestCachedData.feedbackSyncSettings;
+                  }
+              }
 
               if (localData) {
                 const mergeViews = (remoteList: Video[] = [], localList: Video[] = []) => {
@@ -457,7 +467,7 @@ const App: React.FC = () => {
       id: Date.now(),
       title: data.title,
       youtubeUrl: data.youtubeUrl,
-      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       views: 0
     };
     setBaseVideos(prev => [newVideo, ...prev]);
@@ -473,7 +483,7 @@ const App: React.FC = () => {
       id: Date.now(),
       title: data.title,
       youtubeUrl: data.youtubeUrl,
-      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       views: 0
     };
     setBaseShorts(prev => [newShort, ...prev]);
@@ -558,7 +568,7 @@ const App: React.FC = () => {
         setToastMessage({ text: 'رابط يوتيوب غير صالح.', type: 'error' });
         return;
     }
-    const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
     
     const updateList = (list: Video[]) => list.map(v => v.id === video.id ? { ...v, title: video.title, youtubeUrl: video.youtubeUrl, thumbnailUrl } : v);
 
